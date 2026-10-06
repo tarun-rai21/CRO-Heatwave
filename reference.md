@@ -388,7 +388,7 @@ Raw POWER history is roughly 20 M values (102 cells × ~16,700 days × 12 variab
 ```
 CRO-Heatwave/
 ├── reference.md              # this guide
-├── pyproject.toml  uv.lock  Makefile
+├── pyproject.toml  uv.lock
 ├── configs/                  # problem.yaml, data.yaml, features.yaml, model.yaml
 ├── src/heatwave/
 │   ├── ingest/               # POWER, IMD, boundaries
@@ -490,3 +490,4 @@ Weeks start on Mondays. Each phase still ends on its exit criterion: if a phase 
 | 2026-10-06 | 4 | Feature principles and groups, training tables, model ladder (no neural nets in V1), LightGBM settings, tuning, ablation, calibration, leakage tests agreed |
 | 2026-10-07 | 5 | Architecture agreed: GitHub Actions daily run, private Hugging Face dataset for data, Parquet + DuckDB, static GitHub Pages site, public code repo |
 | 2026-10-07 | 6 | Fully live 1 Mar 2027 (fallback 1 Apr) with M2 as v1.0; LightGBM moved to a post-season challenger; Dockerfile deferred |
+| 2026-10-07 | 5.7 | Makefile dropped from the layout (no `make` on Windows; the `heatwave` CLI covers it) |

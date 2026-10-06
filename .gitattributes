@@ -1,0 +1,4 @@
+# Store text files with LF so Windows and the Linux CI runner see identical bytes.
+* text=auto eol=lf
+*.parquet binary
+*.png binary

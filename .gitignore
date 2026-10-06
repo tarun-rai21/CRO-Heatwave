@@ -1,0 +1,17 @@
+# Data never goes in git: it lives in the private Hugging Face dataset (reference.md §5.2).
+data/
+
+# Secrets
+.env
+
+# Environments and tool caches
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+mlruns/
+
+# IDE
+.idea/
+.vscode/
