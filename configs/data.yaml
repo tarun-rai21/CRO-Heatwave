@@ -71,3 +71,25 @@ hub:
   # (GitHub Actions secret in CI); repo id from HF_DATASET_REPO if set.
   repo_id: tarun-rai/cro-heatwave-data
   repo_type: dataset
+
+imd:
+  # IMD Pune 1-degree gridded daily Tmax (label validation / bias reference,
+  # reference.md §2.4). Binary float32 little-endian, shape (days, 31 lat, 31 lon),
+  # lat 7.5..37.5 N and lon 67.5..97.5 E ascending; 99.9 = no data (sea).
+  # Licence: IMD terms restrict redistribution; stored only in the private dataset.
+  tmax_url: https://imdpune.gov.in/cmpg/Griddata/maxtemp.php
+  tmax_form_field: maxtemp
+  referer: https://imdpune.gov.in/cmpg/Griddata/Max_1_Bin.html
+  lat_first: 7.5
+  lon_first: 67.5
+  step_deg: 1.0
+  n_lat: 31
+  n_lon: 31
+  missing_value: 99.9
+  start_year: 1981
+  raw_dir: raw/imd/tmax          # under storage.root; files <year>.GRD, as downloaded
+  request:
+    timeout_s: 300
+    max_retries: 6
+    backoff_base_s: 10.0         # the server is slow and resets connections at times
+    pause_between_requests_s: 5.0

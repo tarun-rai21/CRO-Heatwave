@@ -6,6 +6,7 @@ Commands:
     uv run heatwave ingest-backfill    full POWER history for every cell (resumable)
     uv run heatwave ingest-daily       trailing-window re-fetch (--sync: via Hugging Face)
     uv run heatwave check-raw          completeness of the raw store
+    uv run heatwave ingest-imd         IMD gridded Tmax, 1981 to last full year (resumable)
     uv run heatwave hub-push-all       upload reference/raw/runs to Hugging Face
     uv run heatwave hub-pull           download them
 """
@@ -113,10 +114,32 @@ def cmd_hub_push_all(args: argparse.Namespace) -> None:
 
     cfg, paths = _ingest_context()
     files = sorted(
-        f for sub in ("reference", "raw", "runs") for f in (paths.root / sub).rglob("*.parquet")
+        f
+        for sub in ("reference", "raw", "runs")
+        for f in (paths.root / sub).rglob("*")
+        if f.is_file()
     )
     n = hub.push(cfg, paths.root, files, "sync reference, raw and runs")
     print(f"uploaded {n} files")
+
+
+def cmd_ingest_imd(args: argparse.Namespace) -> None:
+    from heatwave.ingest.imd import ImdSettings, ingest_years
+
+    cfg, paths = _ingest_context()
+    imd = cfg["imd"]
+    first = imd["start_year"]
+    last = int(args.last_year) if args.last_year else utc_now_year() - 1
+    manifest = ingest_years(
+        ImdSettings.from_config(imd), paths.root / imd["raw_dir"], list(range(first, last + 1))
+    )
+    print(f"{len(manifest)} years in manifest: {manifest['year'].min()}-{manifest['year'].max()}")
+
+
+def utc_now_year() -> int:
+    from heatwave.ingest.run import utc_now
+
+    return utc_now().year
 
 
 def cmd_hub_pull(args: argparse.Namespace) -> None:
@@ -148,6 +171,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("check-raw", help="completeness of the raw store").set_defaults(
         func=cmd_check_raw
     )
+    imd = sub.add_parser("ingest-imd", help="download IMD 1-degree gridded Tmax (resumable)")
+    imd.add_argument("--last-year", help="last year to download (default: last full year)")
+    imd.set_defaults(func=cmd_ingest_imd)
     sub.add_parser(
         "hub-push-all", help="upload reference, raw and runs to Hugging Face"
     ).set_defaults(func=cmd_hub_push_all)

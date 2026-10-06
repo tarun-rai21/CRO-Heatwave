@@ -42,6 +42,19 @@
 
 First daily run with sync (`20261006T225641Z-daily`, an hour later): 144,432 values re-fetched, **0 changed**, so no raw files were written; only the run log was pushed. Unchanged re-fetches cost no storage, as designed.
 
+## IMD gridded Tmax (started early: reference.md §6.3)
+
+- **Source:** IMD Pune 1° daily gridded maximum temperature, downloaded as one binary file per year. Done without `imdlib`, which would add matplotlib, scipy and xarray for what is a single POST request.
+- **Format (verified on the 2024 file):** float32 little-endian, shape (days, 31 lat, 31 lon). Latitudes run 7.5→37.5 °N and longitudes 67.5→97.5 °E, both ascending. `99.9` = no data (sea); 355 of 961 points are land. Sanity values for May 2024: Banda (25.5 °N, 80.5 °E) mean 42.0 °C, max 46.6 °C; Kashmir (35.5 °N, 75.5 °E) mean 29.7 °C.
+- **Server behaviour:** slow (about 20 s per request) and intermittently resets the TLS handshake. The downloader retries with long backoff and browser-like headers. It accepts a file only if its size is **exactly** days × 31 × 31 × 4 bytes, because a failed request can return an HTML page with status 200.
+- **Storage:** `raw/imd/tmax/<year>.GRD` exactly as downloaded, plus `manifest.parquet` (size, SHA-256, download time, URL). Private dataset only: IMD's terms restrict redistribution.
+- **Downloaded:** 1981–2025, all 45 years, each at its exact expected size; uploaded to the private dataset. 2026 is not published yet (the previous year becomes available during the following year).
+- **Quality over UP** (box 23.5–30.5 °N, 77–84.5 °E, 53 grid points):
+  - **zero missing cell-days** in any year;
+  - the gaps elsewhere in India and the small year-to-year changes in IMD's land mask (341–362 land points) do not touch UP.
+- **First look:** grid-cell days ≥ 45 °C over the UP box single out the known severe seasons: 1988 (138), 1994 (158), 1995 (251), 1998 (160), 2010 (139), 2014 (143), 2019 (189), 2024 (176), and 2022 (98, the March–April event). Cool, wet years are low, e.g. 2021 with 0 and a May mean of 35.4 °C. This is a sanity check only; the label QA is Phase 4.
+- **Not yet done (Phase 4):** turning the grid into district values, and the POWER-vs-IMD comparison that decides the label source.
+
 ## Daily job
 
 `.github/workflows/daily-ingest.yml`, 03:30 UTC (09:00 IST): pull the needed partitions from Hugging Face → fetch the trailing 120 days for all cells → append changes → push the new files and the run log in one commit.
