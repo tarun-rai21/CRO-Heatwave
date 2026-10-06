@@ -1,5 +1,5 @@
 # Data never goes in git: it lives in the private Hugging Face dataset (reference.md §5.2).
-data/
+/data/
 
 # Secrets
 .env

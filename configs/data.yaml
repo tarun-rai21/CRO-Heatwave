@@ -1,0 +1,40 @@
+# Data sources and spatial mapping. reference.md §2.1–§2.2.
+
+boundaries:
+  # Interim source: GADM 4.1 level 2 (a Survey of India-consistent file is on the
+  # To do later list). Not in git (licence): download gadm41_IND.gpkg from
+  # https://gadm.org/download_country.html and place it at this path.
+  path: data/external/boundaries/gadm41_IND.gpkg
+  layer: ADM_ADM_2
+  state_field: NAME_1
+  state_name: Uttar Pradesh
+  district_field: NAME_2
+  expected_district_count: 75
+  # GADM uses pre-rename names; map them to current official names.
+  renames:
+    Allahabad: Prayagraj
+    Faizabad: Ayodhya
+    Sant Ravi Das Nagar: Bhadohi
+
+geo:
+  # Albers equal-area centred on UP, for areas and weights. (EPSG:7755, used by
+  # the earlier project, is Lambert *Conformal* Conic: it preserves shape, not area.)
+  equal_area_crs: "+proj=aea +lat_1=24 +lat_2=30 +lat_0=26.5 +lon_0=80.5 +datum=WGS84 +units=m +no_defs"
+  # District/cell fragments below this share of the district's area are boundary
+  # slivers: dropped, and the remaining weights renormalised to sum to 1.
+  min_weight: 0.001
+  # Cell edges are densified to this spacing (degrees) before projection, so
+  # edges along parallels stay accurate.
+  densify_deg: 0.05
+
+grid:
+  # MERRA-2 native grid, as served by NASA POWER (1/2 deg lat x 5/8 deg lon).
+  # Cell centres at lat = lat_origin + dlat*j, lon = lon_origin + dlon*i.
+  name: merra2
+  lat_origin: -90.0
+  lon_origin: -180.0
+  dlat: 0.5
+  dlon: 0.625
+
+outputs:
+  reference_dir: data/reference

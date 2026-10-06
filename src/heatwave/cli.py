@@ -1,13 +1,16 @@
 """Command-line entry point. Every pipeline step becomes a subcommand (reference.md §5.2).
 
-uv run heatwave show-problem
+Commands:
+    uv run heatwave show-problem
+    uv run heatwave build-geo
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 
-from heatwave.config import load_problem
+from heatwave.config import REPO_ROOT, load_problem, read_yaml
 
 
 def cmd_show_problem(args: argparse.Namespace) -> None:
@@ -41,12 +44,21 @@ def cmd_show_problem(args: argparse.Namespace) -> None:
         print(f"tier         {tier.name:8s} {tier.rule} {tier.params}")
 
 
+def cmd_build_geo(args: argparse.Namespace) -> None:
+    from heatwave.geo.weights import build_geo  # geo stack is slow to import
+
+    print(json.dumps(build_geo(read_yaml("data.yaml"), REPO_ROOT), indent=2))
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="heatwave")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("show-problem", help="print the frozen problem definition").set_defaults(
         func=cmd_show_problem
     )
+    sub.add_parser(
+        "build-geo", help="district polygons -> grid cells -> area weights (data/reference/)"
+    ).set_defaults(func=cmd_build_geo)
     args = parser.parse_args(argv)
     args.func(args)
 
