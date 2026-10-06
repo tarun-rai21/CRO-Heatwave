@@ -1,0 +1,36 @@
+name: Daily ingest
+
+# Re-fetches the trailing 120 days of NASA POWER data for every grid cell and
+# appends new or revised values to the private Hugging Face dataset
+# (reference.md §2.3, §5.4). Runs long before any model exists, so that
+# provisional-vs-final pairs and the real data latency are on record.
+
+on:
+  schedule:
+    - cron: "30 3 * * *" # 03:30 UTC = 09:00 IST
+  workflow_dispatch:
+
+concurrency:
+  group: daily-ingest
+  cancel-in-progress: false # never run two ingests at once
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_DATASET_REPO: ${{ vars.HF_DATASET_REPO }}
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --locked --no-dev
+
+      - name: Ingest trailing window (pull, fetch, append, push)
+        run: uv run heatwave ingest-daily --sync

@@ -2,7 +2,7 @@
 
 Probabilistic heatwave forecasts for all 75 districts of Uttar Pradesh, for each of the next 10 days. Built for UP government weather officials: forecasts are produced daily, published with alert tiers, and verified against what actually happened.
 
-**Status:** Phase 1 (geography) complete; Phase 2 (ingestion) next. V1.0 goes live on 1 March 2027.
+**Status:** Phase 2 (ingestion) in progress: backfill complete, daily job running. V1.0 goes live on 1 March 2027.
 
 Everything about the design (target, data, labels, validation, models, architecture, phases) is in **[`reference.md`](reference.md)**. Read that first.
 
