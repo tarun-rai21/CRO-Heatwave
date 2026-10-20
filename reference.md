@@ -2,7 +2,7 @@
 
 The single guide for this project. Each section records decisions we have agreed on and why. Change a decision only by editing this file and adding an entry to the change log at the bottom.
 
-**Status:** planning complete (7 Oct 2026). Next: Phase 0 (§6.2). V1.0 goes live 1 March 2027.
+**Status:** Phases 0–5 complete (20 Oct 2026). Next: Phase 6 (§6.2). Goes live 1 March 2027 after shadow mode from mid-December.
 
 ---
 
@@ -222,7 +222,7 @@ Rules are fixed **now, before seeing any results**. Probability thresholds are t
 |---|---|---|
 | G1 — labels | Label passes QA; known severe seasons visible; episode count recorded | Fix the label before any modelling |
 | G2 — baselines | Climatology, persistence and logistic models give sensible BSS-by-lead curves | Debug date/latency alignment |
-| G3 — challenger (Phase 12) | LightGBM beats logistic regression on the onset subset at some lead, with a paired interval excluding 0 | Keep logistic regression; stop tuning; move effort to NWP (V2) |
+| G3 — main model (Phase 7) | LightGBM beats logistic regression on the onset subset at some lead, with a paired interval excluding 0 | Logistic regression goes live; stop tuning; move effort to NWP (V2) |
 | G4 — final test | Skill sign and rough size match development results | Investigate overfitting before any claim to users |
 
 Failing G3 is a legitimate result, not a project failure.
@@ -275,7 +275,7 @@ Optional, low priority: weekly Niño-3.4 and MJO indices, at most 1–2 features
 | M0 | **Climatology:** smoothed heatwave frequency by district × calendar day (training years) | Reference for all skill scores |
 | M1 | **Persistence lookup:** probability by (heatwave at `t` / current anomaly bin) × lead | The baseline that exposes weak ML |
 | M2 | **Logistic regression** on ~6 features: harmonics, Tmax anomaly, 7-d anomaly mean, soil-moisture anomaly, climatological frequency, lead | Interpretable, well calibrated, hard to overfit |
-| M3 | **LightGBM**, log-loss objective, full feature set | Challenger, built after the 2027 season (§6.1). Production from 2028 only if it passes G3 |
+| M3 | **LightGBM**, log-loss objective, full feature set | Built before go-live; production model only if it passes G3 against M2 (§6.1) |
 | M4 (V2) | M3 + NWP features | See To do later |
 
 No neural networks (LSTM/GRU/Transformer) and no random forest in V1. The data volume of independent events doesn't support them, and the ladder above isolates where skill comes from. Everything runs on the laptop; Kaggle is optional.
@@ -436,28 +436,30 @@ CRO-Heatwave/
 - the production model has passed its final test (G4);
 - a runbook exists.
 
-**V1.0 production model = M2 (logistic regression)**, calibrated, with frozen tier thresholds. LightGBM (M3) is built after the 2027 season as a **challenger**. It replaces M2 for 2028 only if it passes G3 against M2 at the annual retrain (§5.6). This keeps the 1 March date at 5–6 h/week and respects "no model changes mid-season".
+**Production model: chosen by gate G3 before go-live** (revised 2026-10-20; the project ran well ahead of schedule). Both M2 (logistic regression) and M3 (LightGBM) are built and evaluated on the same walk-forward folds. **M3 goes live only if it beats M2 on the onset subset at some lead with a paired year-block interval excluding 0**; otherwise M2 goes live. M3 tuning is capped at the limits in §4.6 and is never extended to make it win. The chosen model is calibrated, tier thresholds are frozen, and it is tested once on 2021–2025 before the pipeline goes live.
+
+From completion of the build to 28 February the system runs in **shadow mode**: daily forecasts are produced and published, but not yet presented to users as live.
 
 ### 6.2 Phase plan
 
-Weeks start on Mondays. Each phase still ends on its exit criterion: if a phase overruns, the slack and then the 1 April fallback absorb it, not skipped checks.
+Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overruns, the slack and then the 1 April fallback absorb it, not skipped checks.
 
 | # | Phase | Weeks | Main work | Exit criterion |
 |---|---|---|---|---|
-| 0 | Setup and problem freeze | 12–18 Oct 2026 | Repo scaffold (uv, ruff, pytest, CI); `configs/problem.yaml`; verify IMD criteria and POWER API limits from primary sources | CI green; config matches this document |
-| 1 | Geography | 19–25 Oct | Boundaries, MERRA-2 grid, district–grid weights, cell-sharing count | Weights sum to 1 per district; tests pass |
-| 2 | Ingestion + **daily download job** | 26 Oct – 8 Nov | POWER client (retries, 429, fill values, time standard); 1981→present backfill to Hugging Face; bitemporal raw store; daily GitHub Actions ingest with latency logging | Complete date spine for every cell; daily job ran 7 days unattended |
-| 3 | Data quality | 9–15 Nov | pandera schemas; range, continuity and spatial checks; QA report | Every anomaly explained or flagged |
-| 4 | Labels (highest risk) | 16 Nov – 6 Dec | IMD gridded download; POWER vs IMD comparison; label-source decision; normals; flags; episodes; percentile label | **G1** passed; label QA report |
-| 5 | Features | 7–20 Dec | Feature groups with as-of logic; leakage tests in CI; versioned training tables | Leakage tests green on 20 random dates; feature dictionary |
-| 6 | Validation harness + baselines | 21 Dec – 3 Jan 2027 | Splits, walk-forward, metrics, year-block bootstrap; M0, M1, M2 | **G2** passed; baseline report |
-| 7a | M2 calibration and tiers | 4–10 Jan | Calibrate M2 on OOF; tier thresholds per §3.6; freeze and git-tag v1.0 | Frozen v1.0 artifact with recorded OOF metrics |
-| 8 | Final test | 11–17 Jan | Run 2021–2025 once; then the 2026 season once | **G4** passed; final-test report including what looks bad |
-| 9 | Production pipeline | 18 Jan – 7 Feb | Daily scoring; failure policy; outcomes; static site; CSV/JSON; alerts | All daily steps run end-to-end on GitHub Actions |
-| 10 | Docs and monitoring | 8–14 Feb | Model card, data card, runbook, monitoring checks, weekly scorecard job | Runbook usable by someone new |
-| — | Burn-in (slack) | 15–28 Feb | Pipeline runs unattended; one simulated outage handled per §5.5 | 14 consecutive unattended runs |
-| 11 | **Live season** | 1 Mar – 30 Jun 2027 | Weekly scorecards; incident log; documented fixes only | — |
-| 12 | Season report + challenger | Jul – Dec 2027 | End-of-season report; **M3 LightGBM** (Phase 7 of the full plan: tuning, ablation, sliding vs expanding window, monotone constraints); annual retrain; champion vs challenger | Promotion decision for 2028, written before the comparison |
+| 0 | Setup and problem freeze | done 7 Oct 2026 | Repo scaffold, `problem.yaml`, CI, source verification | CI green; config matches this document |
+| 1 | Geography | done 7 Oct | Boundaries, MERRA-2 grid, district–grid weights | Weights sum to 1 per district |
+| 2 | Ingestion + daily download job | done 20 Oct | POWER backfill, bitemporal raw store, daily GitHub Actions ingest, IMD download | Complete spine; 13 unattended daily runs |
+| 3 | Data quality | done 20 Oct | Hard/soft checks, QA report, daily validate gate | Every anomaly explained or flagged |
+| 4 | Labels | done 20 Oct | Station-referenced label with spatial plane and drift term; episodes; label QA | **G1** passed (recorded exception) |
+| 5 | Features | done 20 Oct | 43 as-of features, fold-aware climatology, leakage tests | Leakage tests green on 20 real dates |
+| 6 | Validation harness + baselines | 21 Oct – 1 Nov | Fold runner, BSS, year-block bootstrap (paired), onset subset, by-lead/month/region breakdowns; region definitions; M0, M1, M2 | **G2** passed; baseline report |
+| 7 | LightGBM, ablation, calibration, tiers | 2–15 Nov | M3 with regularised defaults; ≤ 40-trial tuning on inner blocks; group ablation; sliding vs expanding window; monotone constraints; calibration (Platt/beta on OOF) and tier thresholds for the chosen model | **G3**: production model chosen (M3 or M2) with paired intervals; frozen and git-tagged |
+| 8 | Final test | 16–20 Nov | Run 2021–2025 once. The 2026 season check runs once its final (MERRA-2) data and IMD's 2026 grid are available, before go-live | **G4** passed; final-test report including what looks bad |
+| 9 | Production pipeline | 21 Nov – 6 Dec | Daily scoring with the late-data rule; failure policy; outcomes; static site; CSV/JSON; alerts; workflow keep-alive | All daily steps run end-to-end on GitHub Actions |
+| 10 | Docs and monitoring | 7–13 Dec | Model card, data card, runbook, monitoring (incl. label drift), weekly scorecard job | Runbook usable by someone new |
+| — | Shadow mode | 14 Dec – 28 Feb 2027 | Unattended daily runs; one simulated outage; provisional-vs-final skew audit; 2026 season check; officials review the site | 14+ consecutive unattended runs; skew measured |
+| 11 | **Live season** | 1 Mar – 31 Jul 2027 | Weekly scorecards; incident log; documented fixes only | — |
+| 12 | Season report + annual retrain | Aug – Dec 2027 | End-of-season report; drift term re-estimated with IMD 2026–2027; annual retrain; champion vs challenger | Promotion decision for 2028, written before the comparison |
 | — | V2 | 2028 onward | To do later list, NWP first | — |
 
 ### 6.3 Schedule risks
@@ -471,7 +473,7 @@ Weeks start on Mondays. Each phase still ends on its exit criterion: if a phase 
 
 ### 6.4 Reports and decision records
 
-- Every gated phase (4, 6, 8) ends with a short report in `reports/`. Phase 12 adds the season report and the challenger report.
+- Every gated phase (4, 6, 7, 8) ends with a short report in `reports/`. Phase 12 adds the season report and the annual champion-vs-challenger report.
 - Any change to a decision in this document: edit the section, add a change-log line, and add a short note in `docs/decisions/` if the reason needs more than a line.
 
 ---
@@ -487,7 +489,6 @@ Weeks start on Mondays. Each phase still ends on its exit criterion: if a phase 
 - More station data for the label's bias correction, especially Bundelkhand and the east (IMD station records if obtainable). The current map rests on 4 fit stations plus 6 checks (decision record 005).
 - Ten separate per-lead models vs the single stacked model, if the stacked model underperforms at specific leads.
 - Slow climate indices (Niño-3.4, MJO) as features, if development results justify them.
-- **LightGBM challenger (M3)** with Optuna tuning, group ablation, sliding vs expanding window and monotone constraints. Scheduled for Phase 12 (Jul–Dec 2027), promoted for 2028 only via G3.
 - Dockerfile for the daily run.
 
 ---
@@ -511,3 +512,4 @@ Weeks start on Mondays. Each phase still ends on its exit criterion: if a phase 
 | 2026-10-20 | 2.4, 5.6 | Label gains a yearly drift term (POWER's bias shrinks over time); drift monitoring and annual re-estimation added |
 | 2026-10-20 | 4.2, 4.3 | Features implemented (43; dictionary in docs/features.md); fold tables stop at their validation years; no near-duplicate row weighting in V1 |
 | 2026-10-20 | 3.7 | Gate G1 passed with a recorded exception after the drift term; the per-station year check is now primary |
+| 2026-10-20 | 6.1, 6.2, 4.4, 3.7 | Ahead of schedule: LightGBM (M3) built before go-live in Phase 7; G3 picks the production model; shadow mode Dec–Feb; plan dates revised; live season March–July |
