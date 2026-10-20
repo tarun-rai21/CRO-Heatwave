@@ -6,9 +6,9 @@ Which Tmax should the heatwave rule use? Each candidate is taken at the grid cel
 containing a weather station and scored against that station's own heatwave days
 (IMD's criteria are defined on station Tmax). Evaluation season (months 3-7),
 development years 1981-2020, days with a reported (not hourly-derived)
-maximum only. Every candidate uses its own 6-harmonic 1991-2020 normal. `power_to_st` and
-`power_to_st_plane` are fitted on the other stations only (leave one station out);
-`power_to_st_plane` is the chosen label.
+maximum only. Every candidate uses its own 6-harmonic 1991-2020 normal. The `power_to_st*`
+candidates are fitted on the other stations only (leave one station out);
+`power_to_st_plane_drift` is the chosen label.
 
 Stations: 12 with data; 4 qualify for scoring and fitting
 (enough good seasons in 1991-2020).
@@ -22,11 +22,13 @@ Stations: 12 with data; 4 qualify for scoring and fitting
 | fit | power_to_imd | 567 | 338 | 0.6 | 0.44 | 0.37 | 0.38 | -0.99 |
 | fit | power_to_st | 567 | 594 | 1.05 | 0.45 | 0.51 | 0.5 | 0.13 |
 | fit | power_to_st_plane | 567 | 576 | 1.02 | 0.48 | 0.52 | 0.47 | 0.16 |
+| fit | power_to_st_plane_drift | 567 | 529 | 0.93 | 0.46 | 0.48 | 0.48 | 0.06 |
 | check | power | 309 | 820 | 2.65 | 0.38 | 0.78 | 0.7 | 1.52 |
 | check | imd | 309 | 186 | 0.6 | 0.52 | 0.47 | 0.34 | -0.93 |
 | check | power_to_imd | 309 | 158 | 0.51 | 0.44 | 0.35 | 0.35 | -1.2 |
 | check | power_to_st | 309 | 232 | 0.75 | 0.49 | 0.49 | 0.41 | -0.33 |
 | check | power_to_st_plane | 309 | 272 | 0.88 | 0.53 | 0.53 | 0.42 | -0.11 |
+| check | power_to_st_plane_drift | 309 | 307 | 0.99 | 0.57 | 0.62 | 0.43 | 0.11 |
 
 - ratio: candidate heatwave days / station heatwave days (1 = right base rate)
 - POD: share of station heatwave days the candidate also flags
@@ -42,51 +44,61 @@ Stations: 12 with data; 4 qualify for scoring and fitting
 | Agra | check | 39 | power_to_imd | 119 | 67 | 0.39 | 0.3 | 0.48 | -0.21 |
 | Agra | check | 39 | power_to_st | 119 | 103 | 0.55 | 0.37 | 0.56 | 0.28 |
 | Agra | check | 39 | power_to_st_plane | 119 | 102 | 0.54 | 0.37 | 0.56 | 0.52 |
+| Agra | check | 39 | power_to_st_plane_drift | 119 | 98 | 0.61 | 0.26 | 0.66 | 0.41 |
 | Allahabad Arpt | fit | 34 | imd | 182 | 68 | 0.29 | 0.24 | 0.4 | -1.18 |
 | Allahabad Arpt | fit | 34 | power | 182 | 430 | 0.91 | 0.61 | 0.5 | 1.45 |
 | Allahabad Arpt | fit | 34 | power_to_imd | 182 | 76 | 0.32 | 0.22 | 0.44 | -1.05 |
 | Allahabad Arpt | fit | 34 | power_to_st | 182 | 95 | 0.38 | 0.27 | 0.48 | -0.57 |
 | Allahabad Arpt | fit | 34 | power_to_st_plane | 182 | 169 | 0.56 | 0.4 | 0.55 | 0.26 |
+| Allahabad Arpt | fit | 34 | power_to_st_plane_drift | 182 | 147 | 0.53 | 0.34 | 0.57 | 0.16 |
 | Bahraich | check | 7 | imd | 6 | 9 | 0.5 | 0.67 | 0.39 | -0.14 |
 | Bahraich | check | 7 | power | 6 | 15 | 0.33 | 0.87 | 0.18 | 1.36 |
 | Bahraich | check | 7 | power_to_imd | 6 | 3 | 0.17 | 0.67 | 0.22 | -0.75 |
 | Bahraich | check | 7 | power_to_st | 6 | 6 | 0.33 | 0.67 | 0.33 | -0.46 |
 | Bahraich | check | 7 | power_to_st_plane | 6 | 3 | 0.17 | 0.67 | 0.22 | -0.76 |
+| Bahraich | check | 7 | power_to_st_plane_drift | 6 | 6 | 0.33 | 0.67 | 0.33 | -0.46 |
 | Bareilly | fit | 40 | imd | 114 | 65 | 0.37 | 0.35 | 0.46 | -2.21 |
 | Bareilly | fit | 40 | power | 114 | 390 | 0.8 | 0.77 | 0.33 | 2.06 |
 | Bareilly | fit | 40 | power_to_imd | 114 | 67 | 0.29 | 0.51 | 0.35 | -2.19 |
 | Bareilly | fit | 40 | power_to_st | 114 | 178 | 0.61 | 0.61 | 0.46 | 0.2 |
 | Bareilly | fit | 40 | power_to_st_plane | 114 | 134 | 0.53 | 0.55 | 0.47 | -0.52 |
+| Bareilly | fit | 40 | power_to_st_plane_drift | 114 | 137 | 0.46 | 0.61 | 0.4 | -0.52 |
 | Fursatganj Airport | check | 5 | imd | 19 | 10 | 0.32 | 0.4 | 0.4 | -0.82 |
 | Fursatganj Airport | check | 5 | power | 19 | 62 | 0.84 | 0.74 | 0.36 | 1.28 |
 | Fursatganj Airport | check | 5 | power_to_imd | 19 | 9 | 0.32 | 0.33 | 0.42 | -1.24 |
 | Fursatganj Airport | check | 5 | power_to_st | 19 | 20 | 0.63 | 0.4 | 0.6 | -0.49 |
 | Fursatganj Airport | check | 5 | power_to_st_plane | 19 | 23 | 0.68 | 0.43 | 0.61 | -0.15 |
+| Fursatganj Airport | check | 5 | power_to_st_plane_drift | 19 | 29 | 0.74 | 0.52 | 0.57 | 0.18 |
 | Gorakhpur | fit | 38 | imd | 145 | 85 | 0.42 | 0.28 | 0.52 | -0.32 |
 | Gorakhpur | fit | 38 | power | 145 | 278 | 0.63 | 0.67 | 0.4 | 2.37 |
 | Gorakhpur | fit | 38 | power_to_imd | 145 | 78 | 0.32 | 0.41 | 0.4 | -0.3 |
 | Gorakhpur | fit | 38 | power_to_st | 145 | 97 | 0.32 | 0.52 | 0.37 | 0.73 |
 | Gorakhpur | fit | 38 | power_to_st_plane | 145 | 71 | 0.3 | 0.39 | 0.38 | 0.56 |
+| Gorakhpur | fit | 38 | power_to_st_plane_drift | 145 | 75 | 0.29 | 0.44 | 0.37 | 0.51 |
 | Jhansi | check | 5 | imd | 62 | 37 | 0.6 | 0.0 | 0.73 | -1.14 |
 | Jhansi | check | 5 | power | 62 | 85 | 0.94 | 0.32 | 0.76 | 0.13 |
 | Jhansi | check | 5 | power_to_imd | 62 | 37 | 0.58 | 0.03 | 0.7 | -1.33 |
 | Jhansi | check | 5 | power_to_st | 62 | 22 | 0.35 | 0.0 | 0.5 | -1.69 |
 | Jhansi | check | 5 | power_to_st_plane | 62 | 50 | 0.74 | 0.08 | 0.8 | -0.67 |
+| Jhansi | check | 5 | power_to_st_plane_drift | 62 | 56 | 0.81 | 0.11 | 0.83 | -0.34 |
 | Lal Bahadur Shastri Varanasi Intl | check | 27 | imd | 95 | 52 | 0.45 | 0.17 | 0.57 | -1.1 |
 | Lal Bahadur Shastri Varanasi Intl | check | 27 | power | 95 | 259 | 0.81 | 0.7 | 0.39 | 1.71 |
 | Lal Bahadur Shastri Varanasi Intl | check | 27 | power_to_imd | 95 | 37 | 0.25 | 0.35 | 0.35 | -1.21 |
 | Lal Bahadur Shastri Varanasi Intl | check | 27 | power_to_st | 95 | 68 | 0.42 | 0.41 | 0.47 | -0.14 |
 | Lal Bahadur Shastri Varanasi Intl | check | 27 | power_to_st_plane | 95 | 85 | 0.54 | 0.4 | 0.55 | 0.41 |
+| Lal Bahadur Shastri Varanasi Intl | check | 27 | power_to_st_plane_drift | 95 | 105 | 0.61 | 0.45 | 0.56 | 0.62 |
 | Lucknow / Chaudhary Charan Singh Intl | fit | 40 | imd | 126 | 104 | 0.56 | 0.32 | 0.61 | -0.68 |
 | Lucknow / Chaudhary Charan Singh Intl | fit | 40 | power | 126 | 650 | 0.88 | 0.83 | 0.25 | 2.07 |
 | Lucknow / Chaudhary Charan Singh Intl | fit | 40 | power_to_imd | 126 | 117 | 0.56 | 0.39 | 0.57 | -0.44 |
 | Lucknow / Chaudhary Charan Singh Intl | fit | 40 | power_to_st | 126 | 224 | 0.73 | 0.59 | 0.51 | 0.14 |
 | Lucknow / Chaudhary Charan Singh Intl | fit | 40 | power_to_st_plane | 126 | 202 | 0.71 | 0.55 | 0.53 | 0.32 |
+| Lucknow / Chaudhary Charan Singh Intl | fit | 40 | power_to_st_plane_drift | 126 | 170 | 0.63 | 0.53 | 0.53 | 0.08 |
 | Meerut | check | 5 | imd | 8 | 9 | 0.5 | 0.56 | 0.46 | -2.11 |
 | Meerut | check | 5 | power | 8 | 55 | 0.88 | 0.87 | 0.2 | 2.48 |
 | Meerut | check | 5 | power_to_imd | 8 | 5 | 0.38 | 0.4 | 0.46 | -2.43 |
 | Meerut | check | 5 | power_to_st | 8 | 13 | 0.62 | 0.62 | 0.47 | 0.55 |
 | Meerut | check | 5 | power_to_st_plane | 8 | 9 | 0.5 | 0.56 | 0.46 | -0.03 |
+| Meerut | check | 5 | power_to_st_plane_drift | 8 | 13 | 0.62 | 0.62 | 0.47 | 0.27 |
 
 ## Stations
 

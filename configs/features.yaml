@@ -1,0 +1,34 @@
+# Feature settings (reference.md §4, Phase 5). Feature definitions live in
+# src/heatwave/features/build.py; the generated dictionary is docs/features.md.
+
+# Climatologies used by features (normals, hot-day threshold, heatwave frequency)
+# are fitted per fold on that fold's training years only (reference.md §4.1).
+climatology:
+  normal_harmonics: 6
+  normal_variables: [tmax, T2M_MIN, GWETTOP, GWETROOT, PS]
+  hot_quantile: 0.90             # "hot day" = Tmax anomaly above this per-district, per-month quantile
+  hw_freq_window_days: 15        # +/- days for the calendar-day heatwave frequency
+
+windows:
+  anomaly_means: [3, 7, 14]
+  tmax_max: 7
+  hot_day_counts: [7, 14]
+  deltas: [1, 3, 7]
+  slope_days: 7
+  rain_sums: [7, 30, 90]
+  min_valid_share: 0.7           # a rolling window needs >= 70 % non-missing values
+
+caps:
+  days_since_heatwave: 60        # "no heatwave for 60+ days" all look alike
+  days_since_rain: 90
+  consecutive_hot_days: 30
+
+rain_day_mm: 1.0
+
+# Upwind neighbours: heat usually advects from the west / north-west.
+upwind:
+  max_distance_km: 250
+  bearing_deg: [225, 337.5]      # from SW clockwise to NNW, measured at the target district
+
+# As-of dates kept: those whose issue date s = t + L has at least one valid date
+# s+1..s+10 inside the training window (problem.yaml season.training).

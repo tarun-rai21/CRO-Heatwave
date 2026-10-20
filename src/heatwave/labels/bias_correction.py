@@ -117,3 +117,69 @@ def plane_version(plane: dict) -> str:
         sort_keys=True,
     )
     return "pl_" + hashlib.sha256(payload.encode()).hexdigest()[:12]
+
+
+# --- temporal drift ---------------------------------------------------------------
+# POWER's warm bias shrinks over the record (about 3.3 C against stations in the
+# 1980s, about 2.2 C after 2005, with what looks like a step around 2003-2006),
+# while IMD against stations stays flat. The yearly drift is the season mean of
+# (POWER - IMD - plane) over all districts, smoothed over a few years, estimated on
+# the development years only. Years after them use the mean of the hold years, so
+# no final-test or live data enters the label definition.
+
+
+def fit_bias_drift(
+    power: pd.DataFrame,
+    imd: pd.DataFrame,
+    districts: pd.DataFrame,
+    plane: dict,
+    years: tuple[int, int],
+    months: list[int],
+    smooth_years: int,
+    hold_years: tuple[int, int],
+) -> dict:
+    m = (
+        power[["district_id", "obs_date", "T2M_MAX"]]
+        .merge(imd[["district_id", "obs_date", "tmax_imd"]], on=["district_id", "obs_date"])
+        .merge(districts[["district_id", "centroid_lat", "centroid_lon"]], on="district_id")
+    )
+    m = m[m["obs_date"].dt.year.between(*years) & m["obs_date"].dt.month.isin(months)]
+    resid = m["T2M_MAX"] - m["tmax_imd"] - plane_value(plane, m["centroid_lat"], m["centroid_lon"])
+    annual = resid.groupby(m["obs_date"].dt.year).mean()
+    annual = annual.reindex(range(years[0], years[1] + 1))
+    smooth = annual.rolling(smooth_years, center=True, min_periods=1).mean()
+    hold = float(annual.loc[hold_years[0] : hold_years[1]].mean())
+    return {
+        "years": list(years),
+        "months": list(months),
+        "smooth_years": smooth_years,
+        "hold_years": list(hold_years),
+        "hold_value": hold,
+        "annual": {int(y): float(v) for y, v in annual.items()},
+        "drift": {int(y): float(v) for y, v in smooth.items()},
+    }
+
+
+def drift_value(drift: dict, years) -> np.ndarray:
+    """Drift for each year: the smoothed estimate inside the fitted years, the hold
+    value after them, and the first fitted value before them."""
+    table = {int(k): v for k, v in drift["drift"].items()}
+    first, last = min(table), max(table)
+    y = np.asarray(years, dtype=int)
+    out = np.array([table.get(int(v), np.nan) for v in y], dtype=float)
+    out = np.where(y > last, drift["hold_value"], out)
+    out = np.where(y < first, table[first], out)
+    return out
+
+
+def drift_version(drift: dict) -> str:
+    payload = json.dumps(
+        {
+            "drift": {k: round(v, 6) for k, v in drift["drift"].items()},
+            "hold_value": round(drift["hold_value"], 6),
+            "years": drift["years"],
+            "smooth": drift["smooth_years"],
+        },
+        sort_keys=True,
+    )
+    return "dr_" + hashlib.sha256(payload.encode()).hexdigest()[:12]

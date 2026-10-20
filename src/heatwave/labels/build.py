@@ -1,7 +1,8 @@
 """Build the heatwave labels (reference.md §2.4, docs/decisions/005).
 
 Main label:  POWER district Tmax (area-weighted), minus a smooth spatial bias
-             plane (from IMD's large-scale pattern), mapped to station levels with
+             plane (from IMD's large-scale pattern) and a yearly drift term,
+             mapped to station levels with
              a monthly quantile map fitted once on station pairs in the bias
              period; then the IMD plains rule against a smoothed 1991-2020 normal
              of the corrected series.
@@ -19,6 +20,8 @@ import pandas as pd
 from heatwave.config import HeatwaveRule
 from heatwave.labels.bias_correction import (
     apply_quantile_map,
+    drift_value,
+    drift_version,
     fit_quantile_map,
     plane_value,
     plane_version,
@@ -28,15 +31,33 @@ from heatwave.labels.definition import classify, label_version
 from heatwave.labels.normals import apply_normals, fit_normals
 
 
-def fit_station_map(
-    series: pd.DataFrame, stations: list[str], period, plane: dict | None = None
-) -> pd.DataFrame:
-    """Quantile map POWER (cell at station, minus the spatial plane at the station
-    if given) -> station reported maximum, pooled over the given stations."""
-    pairs = series[series["station_id"].isin(stations) & series["station"].notna()].copy()
+def net_source(values, lat, lon, dates, plane: dict | None, drift: dict | None) -> np.ndarray:
+    """POWER Tmax minus the spatial plane (at lat/lon) and the temporal drift (for
+    each date's year): the input to the station-level quantile map."""
+    out = np.asarray(values, dtype=float)
     if plane is not None:
-        pairs["power"] = pairs["power"] - plane_value(plane, pairs["lat"], pairs["lon"])
-    return fit_quantile_map(pairs.rename(columns={"power": "source", "station": "target"}), period)
+        out = out - plane_value(plane, lat, lon)
+    if drift is not None:
+        out = out - drift_value(drift, pd.to_datetime(pd.Series(dates)).dt.year.to_numpy())
+    return out
+
+
+def fit_station_map(
+    series: pd.DataFrame,
+    stations: list[str],
+    period,
+    plane: dict | None = None,
+    drift: dict | None = None,
+) -> pd.DataFrame:
+    """Quantile map of net POWER (cell at station, see net_source) -> station
+    reported maximum, pooled over the given stations."""
+    pairs = series[series["station_id"].isin(stations) & series["station"].notna()].copy()
+    pairs["source"] = net_source(
+        pairs["power"], pairs["lat"], pairs["lon"], pairs["obs_date"], plane, drift
+    )
+    return fit_quantile_map(
+        pairs[["obs_date", "source", "station"]].rename(columns={"station": "target"}), period
+    )
 
 
 def rule_labels(df: pd.DataFrame, unit: str, value: str, rule: HeatwaveRule) -> pd.DataFrame:
@@ -52,16 +73,20 @@ def main_labels(
     rule: HeatwaveRule,
     plane: dict | None = None,
     districts: pd.DataFrame | None = None,
+    drift: dict | None = None,
 ) -> pd.DataFrame:
     """power: district_id, obs_date, T2M_MAX. With a plane, `districts` gives each
     district's centroid (centroid_lat, centroid_lon). Returns the labels_daily table."""
     df = power[["district_id", "obs_date", "T2M_MAX"]].copy()
-    source = df["T2M_MAX"].to_numpy()
     extra = {"qmap": qmap_version(qmap)}
+    lat = lon = None
     if plane is not None:
         pos = df[["district_id"]].merge(districts, on="district_id", how="left")
-        source = source - plane_value(plane, pos["centroid_lat"], pos["centroid_lon"])
+        lat, lon = pos["centroid_lat"].to_numpy(), pos["centroid_lon"].to_numpy()
         extra["plane"] = plane_version(plane)
+    if drift is not None:
+        extra["drift"] = drift_version(drift)
+    source = net_source(df["T2M_MAX"], lat, lon, df["obs_date"], plane, drift)
     df["tmax_corrected"] = apply_quantile_map(source, df["obs_date"].dt.month, qmap)
     out = rule_labels(df, "district_id", "tmax_corrected", rule)
     out.insert(2, "tmax_raw", df["T2M_MAX"].to_numpy())

@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import geopandas as gpd
 import numpy as np
 import pandas as pd
 
@@ -21,7 +22,16 @@ from heatwave.ingest import gsod
 from heatwave.ingest.imd import ImdSettings, read_grd
 from heatwave.ingest.raw_store import RawStore
 from heatwave.labels import sources
-from heatwave.labels.bias_correction import fit_bias_plane, plane_version, qmap_version
+from heatwave.labels.bias_correction import (
+    apply_quantile_map,
+    drift_value,
+    drift_version,
+    fit_bias_drift,
+    fit_bias_plane,
+    plane_value,
+    plane_version,
+    qmap_version,
+)
 from heatwave.labels.build import (
     episodes,
     fit_station_map,
@@ -98,6 +108,17 @@ def run(
     districts = pd.read_parquet(root / "reference" / "districts.parquet")
     plane = fit_bias_plane(power, imd, districts, rule.bias_fit_period, season)
     (root / "reference" / "label_bias_plane.json").write_text(json.dumps(plane, indent=2))
+    drift = fit_bias_drift(
+        power,
+        imd,
+        districts,
+        plane,
+        rule.bias_drift_years,
+        season,
+        rule.bias_drift_smooth_years,
+        rule.bias_drift_hold_years,
+    )
+    (root / "reference" / "label_bias_drift.json").write_text(json.dumps(drift, indent=2))
 
     # 1. Stations and the source comparison (development years only)
     series = station_inputs(data_cfg, root, dev)
@@ -114,7 +135,7 @@ def run(
     n_days = in_season.groupby("station_id").size()
     check = sorted(set(n_days[n_days >= st_cfg["check_min_season_days"]].index) - set(keep))
     scored = series[series["station_id"].isin([*keep, *check])]
-    scores = sources.compare(scored, rule, dev, tuple(season), plane, keep)
+    scores = sources.compare(scored, rule, dev, tuple(season), plane, drift, keep)
     summary = sources.summarise(scores)
 
     stations = (
@@ -131,11 +152,11 @@ def run(
     stations.to_parquet(root / "reference" / "stations_qualifying.parquet", index=False)
 
     # 2. Bias map fitted once on all qualifying stations in the bias period
-    qmap = fit_station_map(q_series, keep, rule.bias_fit_period, plane)
+    qmap = fit_station_map(q_series, keep, rule.bias_fit_period, plane, drift)
     qmap.to_parquet(root / "reference" / "label_qmap.parquet", index=False)
 
     # 3. Labels for every district-day POWER covers, plus sensitivity labels
-    labels = main_labels(power, qmap, rule, plane, districts)
+    labels = main_labels(power, qmap, rule, plane, districts, drift)
     imd_lab = rule_labels(imd, "district_id", "tmax_imd", rule)[
         ["district_id", "obs_date", "is_heatwave"]
     ].rename(columns={"is_heatwave": "is_heatwave_imd"})
@@ -170,6 +191,7 @@ def run(
         eps,
         qmap,
         plane,
+        drift,
         series,
         keep,
         imd,
@@ -181,6 +203,7 @@ def run(
         "label_version": labels["label_version"].iloc[0],
         "qmap_version": qmap_version(qmap),
         "plane_version": plane_version(plane),
+        "drift_version": drift_version(drift),
         "summary": summary.round(3).reset_index().to_dict("records"),
         **qa,
     }
@@ -198,9 +221,9 @@ Which Tmax should the heatwave rule use? Each candidate is taken at the grid cel
 containing a weather station and scored against that station's own heatwave days
 (IMD's criteria are defined on station Tmax). Evaluation season ({months}),
 development years {dev[0]}-{dev[1]}, days with a reported (not hourly-derived)
-maximum only. Every candidate uses its own {normal} normal. `power_to_st` and
-`power_to_st_plane` are fitted on the other stations only (leave one station out);
-`power_to_st_plane` is the chosen label.
+maximum only. Every candidate uses its own {normal} normal. The `power_to_st*`
+candidates are fitted on the other stations only (leave one station out);
+`power_to_st_plane_drift` is the chosen label.
 
 Stations: {len(stations)} with data; {len(q)} qualify for scoring and fitting
 (enough good seasons in {rule.bias_fit_period[0]}-{rule.bias_fit_period[1]}).
@@ -249,7 +272,9 @@ def _station_heatwaves(series: pd.DataFrame, keep: list[str], rule) -> pd.DataFr
     return s[s["station"].notna()]
 
 
-def _qa_report(path, problem, label_cfg, root, labels, eps, qmap, plane, series, keep, imd, season):
+def _qa_report(
+    path, problem, label_cfg, root, labels, eps, qmap, plane, drift, series, keep, imd, season
+):
     dev, rule = problem.validation.development, problem.target
     lab = labels.copy()
     lab["year"], lab["month"] = lab["obs_date"].dt.year, lab["obs_date"].dt.month
@@ -305,6 +330,44 @@ def _qa_report(path, problem, label_cfg, root, labels, eps, qmap, plane, series,
         }
     )
     years_ok = year_r >= 0.7 and overlap >= 5
+
+    # Per-station version (no station-mix effect): each station's yearly heatwave
+    # days vs its own district's label on the same days, years with >= 60 such days.
+    from heatwave.config import read_yaml
+    from heatwave.geo.weights import load_districts
+
+    poly = load_districts(read_yaml("data.yaml")["boundaries"], root.parent)
+    pts = series.groupby("station_id")[["lat", "lon", "name"]].first().reset_index()
+    pts = gpd.GeoDataFrame(
+        pts, geometry=gpd.points_from_xy(pts["lon"], pts["lat"]), crs="EPSG:4326"
+    )
+    where = gpd.sjoin(pts, poly[["district_id", "geometry"]], predicate="within")
+    per_station = []
+    lab_season = d[d["month"].isin(season)].set_index(["district_id", "obs_date"])["hw"]
+    for r in where[where["station_id"].isin(keep)].itertuples():
+        sday = st[(st["station_id"] == r.station_id) & st["obs_date"].dt.month.isin(season)]
+        ldays = lab_season.reindex(
+            pd.MultiIndex.from_arrays([np.repeat(r.district_id, len(sday)), sday["obs_date"]])
+        ).to_numpy(dtype=float)
+        yy = pd.DataFrame(
+            {
+                "station": sday["hw"].to_numpy(),
+                "label": ldays,
+                "year": sday["obs_date"].dt.year.to_numpy(),
+            }
+        ).groupby("year")
+        counts = yy.size()
+        sums = yy.sum()[counts >= 60]
+        per_station.append(
+            {
+                "station": r.name,
+                "district": r.district_id,
+                "years": len(sums),
+                "corr": sums["station"].corr(sums["label"]),
+            }
+        )
+    per_station = pd.DataFrame(per_station)
+    per_station_mean = float(per_station["corr"].mean())
 
     # Episodes (development years)
     e = eps[eps["start"].dt.year.between(*dev)]
@@ -367,6 +430,44 @@ def _qa_report(path, problem, label_cfg, root, labels, eps, qmap, plane, series,
         .sort_values()
     )
 
+    # Drift: estimate and the bias against stations by 5-year block, before/after
+    sc = series[series["station"].notna() & series["obs_date"].dt.month.isin(season)].copy()
+    sc["static"] = apply_quantile_map(
+        sc["power"] - plane_value(plane, sc["lat"], sc["lon"]),
+        sc["obs_date"].dt.month,
+        fit_station_map(series[series["station_id"].isin(keep)], keep, rule.bias_fit_period, plane),
+    )
+    sc["with_drift"] = apply_quantile_map(
+        sc["power"]
+        - plane_value(plane, sc["lat"], sc["lon"])
+        - drift_value(drift, sc["obs_date"].dt.year),
+        sc["obs_date"].dt.month,
+        qmap,
+    )
+    block = (sc["obs_date"].dt.year // 5) * 5
+    drift_tab = (
+        sc.assign(block=block)
+        .groupby("block")
+        .apply(
+            lambda g: pd.Series(
+                {
+                    "station_days": len(g),
+                    "plane_only_minus_station": (g["static"] - g["station"]).mean(),
+                    "with_drift_minus_station": (g["with_drift"] - g["station"]).mean(),
+                }
+            )
+        )
+        .reset_index()
+    )
+    trend = {
+        c: float(np.polyfit(sc["obs_date"].dt.year, sc[c] - sc["station"], 1)[0] * 10)
+        for c in ("static", "with_drift")
+    }
+    drift_years = pd.DataFrame(
+        {"year": list(drift["drift"]), "drift_c": list(drift["drift"].values())}
+    )
+    drift_years = drift_years[drift_years["year"] % 5 == 0]
+
     fit = f"{rule.bias_fit_period[0]}-{rule.bias_fit_period[1]}"
     normal = f"{rule.normal_n_harmonics} harmonics, {rule.normal_period[0]}-{rule.normal_period[1]}"
     plane_txt = (
@@ -381,7 +482,8 @@ Generated by `uv run heatwave build-labels`. Decision: `docs/decisions/005-phase
 
 - Label: `{rule.name}`, version `{labels["label_version"].iloc[0]}`
 - Tmax source: `{rule.tmax_source}`; spatial plane `{plane_version(plane)}`;
-  station map `{qmap_version(qmap)}` fitted {fit} on {len(keep)} stations
+  drift `{drift_version(drift)}`; station map `{qmap_version(qmap)}` fitted {fit}
+  on {len(keep)} stations
 - Normal: {normal}; evaluation season months {season}
 - Statistics use development years {dev[0]}-{dev[1]} unless stated.
 
@@ -389,7 +491,18 @@ Generated by `uv run heatwave build-labels`. Decision: `docs/decisions/005-phase
 
 Spatial plane of POWER - IMD (season months, {fit}): {plane_txt}.
 
-Station-level map after removing the plane (correction in C by month and quantile):
+Yearly drift of POWER - IMD beyond the plane ({drift["smooth_years"]}-year smoothing,
+estimated {drift["years"][0]}-{drift["years"][1]}; later years use the
+{drift["hold_years"][0]}-{drift["hold_years"][1]} mean, {drift["hold_value"]:+.2f} C),
+every 5th year:
+
+{_md(drift_years)}
+Corrected Tmax minus station by 5-year block (all scored stations, in-sample map;
+leave-one-out figures are in docs/decisions/005). Trend of the bias: plane only
+{trend["static"]:+.2f} C/decade, with drift **{trend["with_drift"]:+.2f} C/decade**.
+
+{_md(drift_tab)}
+Station-level map after removing plane and drift (correction in C by month and quantile):
 
 {_md(qm_tab)}
 Raw POWER minus station in the season, qualifying stations:
@@ -409,6 +522,12 @@ Agreement with the stations' own heatwave rate by year (development years):
 correlation **{year_r:.2f}**; top-8 years shared **{overlap} of 8**
 (pass: correlation >= 0.7 and >= 5 shared) -> {years_verdict}.
 
+The pooled check mixes stations whose records start and stop (Prayagraj reports
+no data after 2014). Per-station version, each station against its own district
+on the same days (years with >= 60 such days); mean correlation
+**{per_station_mean:.2f}**:
+
+{_md(per_station)}
 Originally listed severe seasons (India-wide events; not all were severe in UP):
 
 {_md(known_tab)}
@@ -443,5 +562,6 @@ levels, so IMD's plains criteria apply.
         "year_corr": round(year_r, 3),
         "top8_overlap": overlap,
         "years_ok": years_ok,
+        "per_station_year_corr": round(per_station_mean, 3),
         "episodes_development": int(len(e)),
     }

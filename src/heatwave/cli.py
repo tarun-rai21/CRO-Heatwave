@@ -12,6 +12,7 @@ Commands:
     uv run heatwave build-district-daily  cells -> district daily tables (silver)
     uv run heatwave ingest-gsod        NOAA station maxima, development years
     uv run heatwave build-labels       labels, episodes, label reports
+    uv run heatwave build-features     feature tables per block, docs/features.md
     uv run heatwave hub-push-all       upload reference/raw/runs to Hugging Face
     uv run heatwave hub-pull           download them
 """
@@ -165,6 +166,20 @@ def cmd_build_labels(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2, default=str))
 
 
+def cmd_build_features(args: argparse.Namespace) -> None:
+    from heatwave.features.pipeline import run
+
+    cfg, paths = _ingest_context()
+    manifest = run(
+        load_problem(),
+        read_yaml("features.yaml"),
+        paths.root,
+        REPO_ROOT / cfg["outputs"]["silver_dir"],
+        REPO_ROOT / "docs",
+    )
+    print(json.dumps(manifest, indent=2))
+
+
 def cmd_build_district_daily(args: argparse.Namespace) -> None:
     from heatwave.geo.aggregate import imd_district_daily, power_district_daily
     from heatwave.ingest.imd import ImdSettings
@@ -292,6 +307,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser(
         "build-labels", help="station comparison, bias map, labels, episodes, QA reports"
     ).set_defaults(func=cmd_build_labels)
+    sub.add_parser(
+        "build-features", help="feature tables per fold + development, climatologies, dictionary"
+    ).set_defaults(func=cmd_build_features)
     sub.add_parser("qa-report", help="full-history data QA -> reports/data_qa.md").set_defaults(
         func=cmd_qa_report
     )

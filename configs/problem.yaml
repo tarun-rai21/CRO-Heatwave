@@ -40,6 +40,14 @@ target:                        # reference.md §2.4
   # district mean (POWER - IMD) is removed before mapping to station levels.
   bias_spatial: imd_plane
   bias_fit_period: [1991, 2020]  # map and plane fitted once, part of the label definition
+  # POWER's warm bias shrinks over time (~3.3 C vs stations in the 1980s, ~2.2 C
+  # after 2005) while IMD vs stations stays flat. A yearly drift term (POWER - IMD
+  # beyond the plane, season mean, smoothed) is removed too. Estimated on the
+  # development years; later years use the hold-period mean (docs/decisions/005).
+  bias_temporal: imd_drift
+  bias_drift_years: [1981, 2020]
+  bias_drift_smooth_years: 5
+  bias_drift_hold_years: [2016, 2020]
 
 onset:                         # reference.md §3.5
   lookback_days: 3             # onset case: no heatwave day in the 3 days up to t

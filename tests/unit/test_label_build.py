@@ -153,3 +153,50 @@ def test_plane_version_tracks_coefficients():
     p = fit_bias_plane(power, imd, districts, (1991, 2020), [3, 4, 5, 6, 7])
     assert plane_version(p) == plane_version(dict(p))
     assert plane_version({**p, "b_lat": p["b_lat"] + 0.01}) != plane_version(p)
+
+
+# --- temporal drift ----------------------------------------------------------------
+
+from heatwave.labels.bias_correction import drift_value, fit_bias_drift  # noqa: E402
+
+
+def test_drift_recovers_a_step_and_holds_it_after_the_fitted_years():
+    power, imd, districts = plane_inputs()
+    power = power.copy()
+    power.loc[power.obs_date.dt.year >= 2005, "T2M_MAX"] -= 1.0  # POWER cools by 1 C
+    # The synthetic POWER carries a spatial plane; fit it on the years before the step.
+    plane = fit_bias_plane(
+        power[power.obs_date.dt.year < 2005], imd, districts, (1991, 2004), [3, 4, 5, 6, 7]
+    )
+    drift = fit_bias_drift(
+        power,
+        imd,
+        districts,
+        plane,
+        (1991, 2020),
+        [3, 4, 5, 6, 7],
+        smooth_years=1,
+        hold_years=(2016, 2020),
+    )
+    assert drift_value(drift, [1995])[0] == pytest.approx(0.0, abs=1e-9)
+    assert drift_value(drift, [2010])[0] == pytest.approx(-1.0, abs=1e-9)
+    assert drift_value(drift, [2025])[0] == pytest.approx(drift["hold_value"])
+    assert drift["hold_value"] == pytest.approx(-1.0, abs=1e-9)
+    assert drift_value(drift, [1985])[0] == pytest.approx(drift_value(drift, [1991])[0])
+
+
+def test_drift_is_removed_before_the_map():
+    power, imd, districts = plane_inputs()
+    plane = fit_bias_plane(power, imd, districts, (1991, 2020), [3, 4, 5, 6, 7])
+    drift = {
+        "drift": {y: (0.5 if y >= 2010 else 0.0) for y in range(1991, 2021)},
+        "hold_value": 0.5,
+        "years": [1991, 2020],
+        "smooth_years": 1,
+    }
+    a = main_labels(power, identity_map(), RULE, plane, districts)
+    b = main_labels(power, identity_map(), RULE, plane, districts, drift)
+    late = a.obs_date.dt.year >= 2010
+    assert np.allclose(a.tmax_used[late] - b.tmax_used[late], 0.5, atol=0.051)
+    assert np.allclose(a.tmax_used[~late], b.tmax_used[~late])
+    assert a.label_version.iloc[0] != b.label_version.iloc[0]

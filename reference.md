@@ -132,7 +132,7 @@ severe       = (Tmax ≥ 40 °C and Tmax − normal > 6.4 °C)  or  Tmax ≥ 47 
 | IMD's 1° grid runs cool on hot days | −0.4 to −2.3 °C on average and worse on the hottest days; about 43 % too few heatwave days |
 | POWER's warm bias is smaller over Bundelkhand | about 1.1 °C smaller against IMD, and about 1.9 °C smaller at Jhansi station. Consistent with irrigation cooling the Ganga plains in reality but not in the reanalysis |
 
-**Chosen label Tmax:** POWER district Tmax (area-weighted), **minus a smooth spatial bias plane** (latitude/longitude fit of the district mean POWER − IMD over the evaluation season), then **quantile-mapped by month to station levels**. The map is fitted on the stations with at least 10 good seasons (Lucknow, Prayagraj, Bareilly, Gorakhpur). The plane and map are fitted **once on 1991–2020** and are part of the label definition, like the normal: one fixed label serves every fold and live verification. Leave-one-station-out, it gives 1.02× the station heatwave count with κ 0.48 at the fit stations, and 0.88× with κ 0.53 at six check stations it was not fitted on (Jhansi κ 0.80). IMD as-is gets 0.57–0.60× and κ 0.49–0.52.
+**Chosen label Tmax:** POWER district Tmax (area-weighted), **minus a smooth spatial bias plane** (latitude/longitude fit of the district mean POWER − IMD over the evaluation season) **and a yearly drift term**, then **quantile-mapped by month to station levels**. The drift term exists because POWER's warm bias shrinks over the record (about +3.3 °C against stations in the 1980s, +2.2 °C after 2005) while IMD against stations stays flat. It is the season mean of POWER − IMD − plane, 5-year smoothed, estimated 1981–2020; later years use the 2016–2020 mean. The map is fitted on the stations with at least 10 good seasons (Lucknow, Prayagraj, Bareilly, Gorakhpur). The plane and map are fitted **once on 1991–2020** and are part of the label definition, like the normal: one fixed label serves every fold and live verification. Leave-one-station-out, it gives 1.02× the station heatwave count with κ 0.48 at the fit stations, and 0.88× with κ 0.53 at six check stations it was not fitted on (Jhansi κ 0.80). IMD as-is gets 0.57–0.60× and κ 0.49–0.52.
 
 **Sensitivity labels**, built alongside: the same rule on IMD gridded Tmax, and a **percentile label** (Tmax above the calendar-day 95th percentile for ≥ 3 consecutive days). If conclusions change between labels, they are fragile.
 
@@ -242,18 +242,20 @@ Failing G3 is a legitimate result, not a project failure.
 
 ### 4.2 Feature groups
 
+Implemented in Phase 5: 43 features (41 as-of + 2 lead). The full list, with statistics, is generated in `docs/features.md`.
+
 | Group | Features | Physical reason |
 |---|---|---|
-| Current heat | Tmax, Tmin, their anomalies, Tmax percentile for the calendar day, diurnal range | Distance from the threshold |
-| Persistence | Tmax anomaly mean over 3/7/14 d; 7-day max; days above the calendar-day 90th percentile in the last 7/14 d; consecutive hot days; heatwave flag at `t`; days since last heatwave day | Heatwaves come from persistent, blocked patterns |
+| Current heat | Tmax (label scale), Tmin, their anomalies, diurnal range | Distance from the threshold |
+| Persistence | Tmax anomaly mean over 3/7/14 d; 7-day max; days above the hot-day threshold (90th percentile of the anomaly, per district and month) in the last 7/14 d; consecutive hot days; heatwave flag at `t`; days since last heatwave day | Heatwaves come from persistent, blocked patterns |
 | Trend | ΔTmax over 1/3/7 d; 7-day Tmax slope | Build-up vs breakdown |
 | Land surface | GWETTOP, GWETROOT and their anomalies; rainfall over 7/30/90 d; days since rain > 1 mm | Soil-moisture feedback, the main slow driver |
 | Moisture and wind | Dew point, RH, specific humidity; wind speed; wind u/v components; surface-pressure anomaly | Dry north-westerly flow vs moist easterlies; monsoon onset ends the season |
 | Season | sin/cos of day-of-year; climatological heatwave frequency for the district and calendar day | The prior |
-| Spatial | lat, lon, elevation; state-wide mean Tmax anomaly; upwind (west / north-west) Tmax anomaly | Heat usually advects from the west / north-west |
+| Spatial | lat, lon, elevation; state-wide mean Tmax anomaly; upwind Tmax anomaly (districts within 250 km, bearing 225–337.5°; missing for the westernmost districts) | Heat usually advects from the west / north-west |
 | Lead | lead day `h`; climatological heatwave frequency at the valid date `s + h` | Lets one model share strength across leads |
 
-**Excluded:** district ID as a category (memorisation), month / week / season dummies alongside the harmonics (redundant), 180/365-day temperature statistics (the anomalies already carry them), solar variables (latency).
+**Excluded:** district ID as a category (memorisation), month / week / season dummies alongside the harmonics (redundant), 180/365-day temperature statistics (the anomalies already carry them), solar variables (latency). A separate "Tmax percentile for the calendar day" was dropped in favour of the anomaly and the hot-day counts, which carry the same information.
 
 Optional, low priority: weekly Niño-3.4 and MJO indices, at most 1–2 features. There are only ~40 seasons, so these have ~40 effective samples. Mind their publication lag.
 
@@ -262,8 +264,9 @@ Optional, low priority: weekly Niño-3.4 and MJO indices, at most 1–2 features
 - **Per-lead model:** long format, one row per (district, issue date `s`, lead `h`), with `h` as a feature. One model covers all leads. Ten separate per-lead models are tried later only if needed.
 - **Window model:** one row per (district, issue date), as its own model.
 - **Rows used:** issue dates whose valid dates fall in **15 Feb – 15 Aug** (season plus shoulders, to see onset and withdrawal).
-- **Near-duplicate rows:** neighbouring districts share most grid cells. The share-weighting decision is made when the reference grid tables exist. Either weight rows by cell overlap, or rely on large leaf sizes and claim results at region level only.
+- **Near-duplicate rows:** neighbouring districts share grid cells, but after area weighting none share identical inputs (highest overlap 0.68). **No row weighting in V1** (decision record 006): regularised models, year-block intervals and region-level claims instead.
 - Training tables are versioned by `feature_version` and `label_version`.
+- **Storage:** one feature table per block (fold 1–5 and `development`) holds one row per (district, as-of date). The per-lead and window tables are assembled from it at training time (`features/targets.py`), since storing the per-lead form would be 10× larger. A fold's table holds only its own training and validation years; only `development` holds 2021 onward.
 
 ### 4.4 Model ladder
 
@@ -385,6 +388,7 @@ Raw POWER history is roughly 20 M values (102 cells × ~16,700 days × 12 variab
 | Forecast sanity | Mean probability and tier counts vs the climatological expectation for the date |
 | Verification (in-season, weekly) | BSS vs climatology, reliability, hits / false alarms by tier and lead, with event counts shown |
 | Train/serve skew (monthly) | Distribution of provisional − final values for Tmax, Tmin and soil moisture, from the bitemporal raw table |
+| Label drift (monthly in season; yearly at retrain) | Live POWER Tmax against IMD's real-time grid and available stations. The label's drift term holds the 2016–2020 level after 2020; at each annual retrain, once IMD publishes the year, re-estimate it and version the label |
 
 - **End-of-season report every July:** full metrics with bootstrap intervals, an episode-by-episode review, and misses analysed by cause (label, data, genuinely unpredictable).
 - **Retraining once a year, after the season.** The challenger is compared with the current model on the same walk-forward plus the newly completed season. It is promoted only if the paired interval on ΔBSS is not negative and calibration is no worse. Criteria are written before the comparison.
@@ -504,3 +508,6 @@ Weeks start on Mondays. Each phase still ends on its exit criterion: if a phase 
 | 2026-10-20 | 2.4 | Label source decided: POWER minus a spatial bias plane (from IMD), mapped to station levels; fitted once on 1991–2020; 6-harmonic normal; QA check uses station heatwave years |
 | 2026-10-20 | 3.1, 4.3 | Evaluation season March–July; training rows 15 Feb – 15 Aug |
 | 2026-10-20 | 2.1 | IMD gridded and NOAA GSOD stations added as label references |
+| 2026-10-20 | 2.4, 5.6 | Label gains a yearly drift term (POWER's bias shrinks over time); drift monitoring and annual re-estimation added |
+| 2026-10-20 | 4.2, 4.3 | Features implemented (43; dictionary in docs/features.md); fold tables stop at their validation years; no near-duplicate row weighting in V1 |
+| 2026-10-20 | 3.7 | Gate G1 passed with a recorded exception after the drift term; the per-station year check is now primary |

@@ -11,7 +11,9 @@ candidate is taken at the grid cell containing the station:
                  only (leave one station out), as it would be applied to a
                  district with no station
     power_to_st_plane  as power_to_st, after removing the spatial bias plane
-                 (IMD's large-scale pattern) at each location (the chosen label)
+                 (IMD's large-scale pattern) at each location
+    power_to_st_plane_drift  as power_to_st_plane, also removing the yearly drift
+                 term (the chosen label)
 
 Each candidate uses its own normal (same period and smoothing as the label),
 and only development years are used.
@@ -23,11 +25,23 @@ import numpy as np
 import pandas as pd
 
 from heatwave.config import HeatwaveRule
-from heatwave.labels.bias_correction import apply_quantile_map, fit_quantile_map, plane_value
+from heatwave.labels.bias_correction import (
+    apply_quantile_map,
+    drift_value,
+    fit_quantile_map,
+    plane_value,
+)
 from heatwave.labels.definition import classify
 from heatwave.labels.normals import apply_normals, fit_normals
 
-CANDIDATES = ["power", "imd", "power_to_imd", "power_to_st", "power_to_st_plane"]
+CANDIDATES = [
+    "power",
+    "imd",
+    "power_to_imd",
+    "power_to_st",
+    "power_to_st_plane",
+    "power_to_st_plane_drift",
+]
 
 
 def station_series(
@@ -73,7 +87,11 @@ def qualifying(
 
 
 def _with_candidates(
-    series: pd.DataFrame, period: tuple[int, int], plane: dict, fit_stations: list[str]
+    series: pd.DataFrame,
+    period: tuple[int, int],
+    plane: dict,
+    drift: dict,
+    fit_stations: list[str],
 ) -> pd.DataFrame:
     """Station-based maps for a station are fitted on the OTHER fit stations only."""
     s = series.copy()
@@ -81,7 +99,9 @@ def _with_candidates(
     s["power_to_imd"] = np.nan
     s["power_to_st"] = np.nan
     s["power_to_st_plane"] = np.nan
+    s["power_to_st_plane_drift"] = np.nan
     s["power_net"] = s["power"] - plane_value(plane, s["lat"], s["lon"])
+    s["power_net_drift"] = s["power_net"] - drift_value(drift, s["obs_date"].dt.year)
     for sid, g in s.groupby("station_id"):
         qm_imd = fit_quantile_map(g.rename(columns={"power": "source", "imd": "target"}), period)
         s.loc[g.index, "power_to_imd"] = apply_quantile_map(g["power"], month[g.index], qm_imd)
@@ -99,7 +119,16 @@ def _with_candidates(
             period,
         )
         s.loc[g.index, "power_to_st_plane"] = apply_quantile_map(
-            g["power"] - plane_value(plane, g["lat"], g["lon"]), month[g.index], qm_pl
+            g["power_net"], month[g.index], qm_pl
+        )
+        qm_dr = fit_quantile_map(
+            others[["obs_date", "power_net_drift", "station"]].rename(
+                columns={"power_net_drift": "source", "station": "target"}
+            ),
+            period,
+        )
+        s.loc[g.index, "power_to_st_plane_drift"] = apply_quantile_map(
+            g["power_net_drift"], month[g.index], qm_dr
         )
     return s
 
@@ -116,6 +145,7 @@ def compare(
     eval_years: tuple[int, int],
     months: tuple[int, ...],
     plane: dict,
+    drift: dict,
     fit_stations: list[str],
 ) -> pd.DataFrame:
     """Per station and candidate: heatwave days, POD, FAR, Cohen's kappa against
@@ -123,7 +153,7 @@ def compare(
     Stations not in fit_stations are scored as out-of-sample checks (role
     "check"); their own normal may rest on few seasons, so they are indicative."""
     period, k = rule.normal_period, rule.normal_n_harmonics
-    s = _with_candidates(series, period, plane, fit_stations)
+    s = _with_candidates(series, period, plane, drift, fit_stations)
     for col in ["station", *CANDIDATES]:
         coefs = fit_normals(s, "station_id", col, period, k)
         s[col + "_normal"] = apply_normals(s, "station_id", coefs)

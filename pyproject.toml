@@ -37,7 +37,8 @@ packages = ["src/heatwave"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra --strict-markers"
+addopts = "-ra --strict-markers -m 'not slow'"
+markers = ["slow: long real-data checks; run with `pytest -m slow`"]
 
 [tool.ruff]
 line-length = 100

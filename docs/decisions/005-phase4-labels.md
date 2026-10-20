@@ -78,3 +78,36 @@ July heat before a late monsoon onset is a genuine heatwave under IMD's rule. Au
 - Gorakhpur (north-east) under-counts under every corrected candidate. Over March–July the station has 145 heatwave days; the chosen label gives 71 (κ 0.38), the lowest of the corrected candidates, against 78–97 for the others. The plane makes the north-east slightly cooler. The cause is unexplained; the eastern humid regime is a candidate. Worth watching in the by-region results of Phase 6.
 - The 1° IMD grid sets only the *large-scale* spatial adjustment, not local detail.
 - Station points vs ~3,000 km² districts: κ around 0.5 is near the ceiling of what any gridded label can reach.
+
+## Addendum (2026-10-20, during Phase 5): temporal drift term
+
+**Finding.** Building features exposed a May Tmax anomaly averaging −0.66 °C against a 1981–2005 climatology. Within the fit years the normal's monthly bias was ≤ 0.22 °C, so the cause was the record itself: **POWER's warm bias shrinks over time.**
+
+| Same station-days, April–June | 1980s | 1995–2000 | 2005–2015 | 2020 |
+|---|---|---|---|---|
+| POWER − station | +3.3 to +3.4 | +2.2 to +2.7 | +1.9 to +2.4 | +1.8 |
+| IMD − station | −0.4 to −0.9 | −1.1 to −1.3 | −1.0 to −1.4 | −1.1 |
+
+All districts, POWER − IMD falls from +3.7 to about +2.2–2.9 °C. The stations show no matching cooling, so POWER drifts against observations. The estimated drift looks like a **step around 2003–2006** (about +0.6 °C before, −0.35 °C after) rather than a smooth trend, which points to a change inside the source data. With a fixed correction, early-year labels would be too hot, recent and final-test labels too cool, and the label would show a false decline in heatwaves.
+
+**Decision (owner):** add a **yearly drift term**: the season mean of (POWER − IMD − plane) over all districts, 5-year smoothing, estimated on 1981–2020. Years after 2020 use the **2016–2020 mean (−0.37 °C)**, so no final-test or live data enters the label. It is removed before the station map, which is refitted. The same mild in-sample use applies as for the normal (a development year's correction uses that year's IMD). Versions: label `lbl_9105574cbb3a`, plane `pl_35f59da4afef`, drift `dr_694dbdcaa277`, map `qm_22af9dce589c`.
+
+**Effect** (`reports/label_source_comparison.md`, `reports/label_qa.md`):
+
+| | Plane only | Plane + drift |
+|---|---|---|
+| Trend of the bias against stations | −0.42 °C/decade | **−0.09 °C/decade** |
+| Leave-one-out bias vs stations, 1980s / 2005–2015 | +1.1 / −0.2 °C | +0.4 to +0.5 / +0.1 °C |
+| Fit stations: count ratio / κ | 1.02 / 0.48 | 0.93 / 0.46 |
+| Check stations (never fitted on): count ratio / κ | 0.88 / 0.53 | **0.99 / 0.57** |
+| Jhansi κ | 0.80 | 0.83 |
+| Per-station yearly agreement (station vs own district) | 0.72 | 0.70 |
+| Development-year episodes | 265 | 232 |
+
+It fixes the long-term bias (its purpose) and improves the out-of-sample stations. It is slightly worse on the fit stations and neutral on year-to-year agreement.
+
+**Year check after the drift term.** The pooled check (label yearly counts vs the pooled station heatwave rate) gives correlation 0.74 (≥ 0.7) but **4 of 8** top years shared, against the ≥ 5 required. The pooled station rate mixes stations that start and stop: Prayagraj, the hottest, reports nothing after 2014. A per-station version (each station against its own district, same days) is now in the report: mean correlation 0.70.
+
+**Decision (owner): gate G1 passes with this exception recorded.** From now on the **per-station check is the primary year check**, because it is free of the station-mix effect. The pooled check stays in the report for comparison.
+
+**Operations follow-up:** the hold value (−0.37 °C) is an assumption for 2021 onward. Each year at the annual retrain, once IMD publishes the year, re-estimate the drift and version the label. Monitor live POWER against IMD and the stations (reference.md §5.6).

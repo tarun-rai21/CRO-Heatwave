@@ -92,7 +92,8 @@ def test_normal_ignores_years_outside_the_period_and_nulls():
     shifted.loc[::7, "tmax"] = np.nan
     a = fit_normals(df, "unit", "tmax", (1991, 2020), 6)
     b = fit_normals(shifted, "unit", "tmax", (1991, 2020), 6)
-    assert np.allclose(a.filter(like="c").to_numpy(), b.filter(like="c").to_numpy())
+    coef = r"^c\d+$"
+    assert np.allclose(a.filter(regex=coef).to_numpy(), b.filter(regex=coef).to_numpy())
 
 
 def test_leap_day_lies_between_its_neighbours():

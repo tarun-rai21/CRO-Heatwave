@@ -20,6 +20,7 @@ CONFIG_DIR = REPO_ROOT / "configs"
 TMAX_SOURCES = {"undecided", "power", "power_bias_corrected", "imd_gridded"}
 BIAS_REFERENCES = {"none", "gsod_stations", "imd_gridded"}
 BIAS_SPATIAL = {"none", "imd_plane"}
+BIAS_TEMPORAL = {"none", "imd_drift"}
 NORMAL_SMOOTHING = {"harmonics", "window"}
 
 
@@ -65,6 +66,10 @@ class HeatwaveRule:
     bias_reference: str
     bias_spatial: str
     bias_fit_period: Years | None
+    bias_temporal: str = "none"
+    bias_drift_years: Years | None = None
+    bias_drift_smooth_years: int = 1
+    bias_drift_hold_years: Years | None = None
 
 
 @dataclass(frozen=True)
@@ -157,6 +162,16 @@ def _parse(raw: dict[str, Any]) -> Problem:
             tmax_source=target["tmax_source"],
             bias_reference=target.get("bias_reference", "none"),
             bias_spatial=target.get("bias_spatial", "none"),
+            bias_temporal=target.get("bias_temporal", "none"),
+            bias_drift_years=(
+                _years(target["bias_drift_years"]) if target.get("bias_drift_years") else None
+            ),
+            bias_drift_smooth_years=int(target.get("bias_drift_smooth_years", 1)),
+            bias_drift_hold_years=(
+                _years(target["bias_drift_hold_years"])
+                if target.get("bias_drift_hold_years")
+                else None
+            ),
             bias_fit_period=(
                 _years(target["bias_fit_period"]) if target.get("bias_fit_period") else None
             ),
@@ -216,6 +231,14 @@ def validate_problem(p: Problem) -> None:
     check(t.tmax_source in TMAX_SOURCES, f"tmax_source must be one of {TMAX_SOURCES}")
     check(t.bias_reference in BIAS_REFERENCES, f"bias_reference must be one of {BIAS_REFERENCES}")
     check(t.bias_spatial in BIAS_SPATIAL, f"bias_spatial must be one of {BIAS_SPATIAL}")
+    check(t.bias_temporal in BIAS_TEMPORAL, f"bias_temporal must be one of {BIAS_TEMPORAL}")
+    if t.bias_temporal == "imd_drift":
+        dy, hy = t.bias_drift_years, t.bias_drift_hold_years
+        check(dy is not None and hy is not None, "imd_drift needs drift and hold years")
+        if dy is not None and hy is not None:
+            check(dy[0] <= hy[0] <= hy[1] <= dy[1], "hold years must lie inside the drift years")
+            check(dy[1] < p.validation.final_test[0], "drift years must end before the final test")
+        check(t.bias_drift_smooth_years >= 1, "bias_drift_smooth_years must be >= 1")
     corrected = t.tmax_source == "power_bias_corrected"
     check(
         not corrected or (t.bias_reference != "none" and t.bias_fit_period is not None),
