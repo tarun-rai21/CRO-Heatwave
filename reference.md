@@ -79,6 +79,7 @@ A **team of Uttar Pradesh government weather officials.** What follows from that
 | Time standard | Local solar time (POWER's daily default), recorded in metadata |
 | Missing values | POWER's fill value (−999) becomes null at ingestion and never reaches a calculation |
 | Rejected | ERA5/ERA5-Land (~5-day latency costs lead time); IMD gridded as an input source (coarse, slow updates) |
+| Label references (not model inputs) | IMD 1° gridded Tmax (1981–2025) and NOAA GSOD station daily maxima for UP (development years 1981–2020 only), used to bias-correct and validate the label (§2.4) |
 
 **Variables (13; POWER allows 20 per request):**
 
@@ -110,7 +111,7 @@ Solar radiation is **excluded**: its 5–7 day latency would delay every forecas
 
 ### 2.4 Heatwave label
 
-**Rule (IMD plains criteria; exact wording verified against IMD's own documentation when implemented):**
+**Rule (IMD plains criteria, verified against IMD's *FAQ on Heat Wave*, decision record 001):**
 
 ```
 heatwave day = (Tmax ≥ 40 °C and Tmax − normal ≥ 4.5 °C)  or  Tmax ≥ 45 °C
@@ -118,25 +119,27 @@ severe       = (Tmax ≥ 40 °C and Tmax − normal > 6.4 °C)  or  Tmax ≥ 47 
 ```
 
 - This is the **meteorological condition at district level**, not IMD's operational *declaration* (which needs ≥ 2 stations in a subdivision on 2 consecutive days). Every output says so.
-- **Normal:** IMD's current period **1991–2020**, as a daily normal smoothed across the calendar (harmonics or ±15-day window), so day-to-day noise cannot create false heatwave days.
+- **Normal:** IMD's current period **1991–2020**, a daily normal from a **6-harmonic** fit of the annual cycle. It was the best of the smoothings tried in an out-of-sample test, though all were within 0.02 °C RMSE of each other.
 - Values are rounded to IMD's reporting precision (0.1 °C) before comparison. A missing Tmax gives a missing label, never a "no".
-- Every label row carries a `label_version`: a hash of rule, thresholds, normal period, smoothing, source and any bias correction.
+- Every label row carries a `label_version`: a hash of the rule, thresholds, normal, source, and the fitted bias map and spatial plane.
+- All 75 districts use the plains criteria (assumption A1 checked: the highest area-weighted district elevation is far below hill-station levels).
 
-**Which Tmax the rule is applied to is decided by measurement, before any modelling.** IMD's thresholds are meant for station readings; POWER Tmax is a grid-cell average that is likely cooler on extreme days.
+**Tmax source: decided by measurement in Phase 4 (decision record 005).** Development years only (1981–2020).
 
-1. Download IMD gridded observed Tmax (1°) for 1981 onward.
-2. Over the heat season, per district: average bias, bias on the hottest days, correlation of daily anomalies, and agreement of heatwave flags (hits, misses, Cohen's κ).
-3. Choose and record the reason:
-
-| Finding | Label source |
+| Finding | Evidence |
 |---|---|
-| Small bias on hot days, flags agree well | POWER Tmax as-is |
-| Clear bias on hot days, but anomalies track well | POWER Tmax **bias-corrected to IMD** (fitted on training years only) |
-| Anomalies track poorly | **IMD gridded Tmax** for labels; POWER for inputs only |
+| POWER runs warm | +1.8 to +2.7 °C against UP weather stations (NOAA GSOD reported maxima); about 3× too many heatwave days |
+| IMD's 1° grid runs cool on hot days | −0.4 to −2.3 °C on average and worse on the hottest days; about 43 % too few heatwave days |
+| POWER's warm bias is smaller over Bundelkhand | about 1.1 °C smaller against IMD, and about 1.9 °C smaller at Jhansi station. Consistent with irrigation cooling the Ganga plains in reality but not in the reanalysis |
 
-A **percentile label** (Tmax above the calendar-day 95th percentile for ≥ 3 days) is also built as a sensitivity check. If conclusions change between the two labels, they are fragile.
+**Chosen label Tmax:** POWER district Tmax (area-weighted), **minus a smooth spatial bias plane** (latitude/longitude fit of the district mean POWER − IMD over the evaluation season), then **quantile-mapped by month to station levels**. The map is fitted on the stations with at least 10 good seasons (Lucknow, Prayagraj, Bareilly, Gorakhpur). The plane and map are fitted **once on 1991–2020** and are part of the label definition, like the normal: one fixed label serves every fold and live verification. Leave-one-station-out, it gives 1.02× the station heatwave count with κ 0.48 at the fit stations, and 0.88× with κ 0.53 at six check stations it was not fitted on (Jhansi κ 0.80). IMD as-is gets 0.57–0.60× and κ 0.49–0.52.
 
-**Label QA before modelling:** heatwave days per year, district and month; known severe seasons (e.g. 1998, 2010, 2015, 2019, 2022, 2024) must stand out; contiguous state-wide hot days grouped into **episodes**. The episode count is the real sample size.
+**Sensitivity labels**, built alongside: the same rule on IMD gridded Tmax, and a **percentile label** (Tmax above the calendar-day 95th percentile for ≥ 3 consecutive days). If conclusions change between labels, they are fragile.
+
+**Label QA** (`reports/label_qa.md`, gate G1):
+- heatwave days by year, month and district;
+- agreement with the **stations' own heatwave years** (correlation ≥ 0.7 and ≥ 5 of the top 8 years shared). This replaced an India-wide list of "known" severe seasons, several of which were not severe in UP;
+- contiguous state-wide hot days grouped into **episodes**: 265 in development years. The episode count is the real sample size.
 
 ---
 
@@ -154,7 +157,7 @@ BSS = 1 − BS_model / BS_climatology
 - **Climatology reference (M0):** the smoothed historical heatwave frequency for that district and calendar day, fitted on training years only.
 - Computed **only on valid dates inside the heat season**, per lead day `h` and for the 10-day window target.
 - BSS > 0 means information beyond the calendar. The lead at which the BSS interval first includes 0 is the **skill horizon**, reported prominently to users.
-- **Heat season:** 1 March – 30 June, provisional. Finalised after the label QA by including any month that holds more than 1% of historical heatwave days.
+- **Heat season: 1 March – 31 July** (decided in Phase 4, decision record 005). UP stations put more than 1 % of their heatwave days in each month March–July: 16.5 % fall in July, before a late monsoon onset. August holds only 0.5 % at stations; the label's own August share (2.5 %) comes from the label method, so August is excluded.
 
 ### 3.2 Data splits (whole calendar years)
 
@@ -258,7 +261,7 @@ Optional, low priority: weekly Niño-3.4 and MJO indices, at most 1–2 features
 
 - **Per-lead model:** long format, one row per (district, issue date `s`, lead `h`), with `h` as a feature. One model covers all leads. Ten separate per-lead models are tried later only if needed.
 - **Window model:** one row per (district, issue date), as its own model.
-- **Rows used:** issue dates whose valid dates fall in **15 Feb – 15 Jul** (season plus shoulders, to see onset and withdrawal).
+- **Rows used:** issue dates whose valid dates fall in **15 Feb – 15 Aug** (season plus shoulders, to see onset and withdrawal).
 - **Near-duplicate rows:** neighbouring districts share most grid cells. The share-weighting decision is made when the reference grid tables exist. Either weight rows by cell overlap, or rely on large leaf sizes and claim results at region level only.
 - Training tables are versioned by `feature_version` and `label_version`.
 
@@ -477,6 +480,7 @@ Weeks start on Mondays. Each phase still ends on its exit criterion: if a phase 
 - Humid-heat target (heat index / wet-bulb) for eastern UP, which the dry-bulb rule misses.
 - Finer-resolution inputs (e.g. ERA5-Land), if their extra latency is worth it.
 - Replace GADM boundaries with a current Survey of India–consistent 75-district file.
+- More station data for the label's bias correction, especially Bundelkhand and the east (IMD station records if obtainable). The current map rests on 4 fit stations plus 6 checks (decision record 005).
 - Ten separate per-lead models vs the single stacked model, if the stacked model underperforms at specific leads.
 - Slow climate indices (Niño-3.4, MJO) as features, if development results justify them.
 - **LightGBM challenger (M3)** with Optuna tuning, group ablation, sliding vs expanding window and monotone constraints. Scheduled for Phase 12 (Jul–Dec 2027), promoted for 2028 only via G3.
@@ -497,3 +501,6 @@ Weeks start on Mondays. Each phase still ends on its exit criterion: if a phase 
 | 2026-10-07 | 5.7 | Makefile dropped from the layout (no `make` on Windows; the `heatwave` CLI covers it) |
 | 2026-10-20 | 1.3, 5.5 | `L = 3` kept after 13 days of measured latency (3 d on 11 runs, 4 d on 2); late-data days publish a 9-day forecast flagged "data 1 day late" |
 | 2026-10-20 | 2.1 | `WD10M` replaced by `U10M`/`V10M` after finding invalid POWER wind directions from 2012-12-31 onward |
+| 2026-10-20 | 2.4 | Label source decided: POWER minus a spatial bias plane (from IMD), mapped to station levels; fitted once on 1991–2020; 6-harmonic normal; QA check uses station heatwave years |
+| 2026-10-20 | 3.1, 4.3 | Evaluation season March–July; training rows 15 Feb – 15 Aug |
+| 2026-10-20 | 2.1 | IMD gridded and NOAA GSOD stations added as label references |

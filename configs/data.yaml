@@ -26,6 +26,11 @@ geo:
   # Cell edges are densified to this spacing (degrees) before projection, so
   # edges along parallels stay accurate.
   densify_deg: 0.05
+  # District Tmax is the area-weighted mean of its cells. The "hottest cell" Tmax
+  # (reference.md §2.2) only considers cells covering at least this share of the
+  # district, so edge slivers (e.g. a 0.7 % foothill cell) cannot set it
+  # (docs/decisions/004).
+  cellmax_min_share: 0.10
 
 grid:
   # MERRA-2 native grid, as served by NASA POWER (1/2 deg lat x 5/8 deg lon).
@@ -38,6 +43,7 @@ grid:
 
 outputs:
   reference_dir: data/reference
+  silver_dir: data/silver          # derived, rebuilt from raw: district daily tables
 
 power:
   # NASA POWER Daily API (verified: docs/decisions/001). Max 20 parameters per
@@ -97,3 +103,22 @@ imd:
     max_retries: 6
     backoff_base_s: 10.0         # the server is slow and resets connections at times
     pause_between_requests_s: 5.0
+
+gsod:
+  # NOAA Global Summary of the Day (public domain): station daily maxima used as
+  # the reference level for the label's bias correction (docs/decisions/005).
+  history_url: https://www.ncei.noaa.gov/pub/data/noaa/isd-history.csv
+  data_url: https://www.ncei.noaa.gov/data/global-summary-of-the-day/access/{year}/{station}.csv
+  # Stations inside UP, or within this distance of its boundary (degrees).
+  boundary_buffer_deg: 0.05
+  # Development years only: the final-test block (2021-2025) is not downloaded.
+  years: [1981, 2020]
+  missing_value: 9999.9
+  # MAX_ATTRIBUTES "*" = maximum derived from hourly reports (biased low): excluded.
+  derived_flag: "*"
+  raw_dir: raw/stations/gsod     # <year>/<station>.csv, as downloaded
+  request:
+    timeout_s: 60
+    max_retries: 4
+    backoff_base_s: 2.0
+    pause_between_requests_s: 0.2

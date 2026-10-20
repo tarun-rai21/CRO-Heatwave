@@ -21,8 +21,9 @@ def test_dates_match_reference_1_3():
 
 
 def test_seasons_match_reference_3_1_and_4_3():
-    assert P.evaluation_season == DayWindow("03-01", "06-30")
-    assert P.training_season == DayWindow("02-15", "07-15")
+    # Extended to July in Phase 4 (docs/decisions/005)
+    assert P.evaluation_season == DayWindow("03-01", "07-31")
+    assert P.training_season == DayWindow("02-15", "08-15")
 
 
 def test_label_rule_matches_reference_2_4():
@@ -31,7 +32,11 @@ def test_label_rule_matches_reference_2_4():
     assert (t.absolute_heatwave_c, t.absolute_severe_c) == (45.0, 47.0)
     assert t.round_decimals == 1
     assert t.normal_period == (1991, 2020)
-    assert t.tmax_source == "undecided"  # decided by measurement in Phase 4
+    assert (t.normal_smoothing, t.normal_n_harmonics) == ("harmonics", 6)
+    # Decided in Phase 4 (docs/decisions/005)
+    assert t.tmax_source == "power_bias_corrected"
+    assert (t.bias_reference, t.bias_fit_period) == ("gsod_stations", (1991, 2020))
+    assert t.bias_spatial == "imd_plane"
 
 
 def test_onset_matches_reference_3_5():
@@ -101,6 +106,8 @@ def set_path(*keys_and_value):
         (set_path("target", "departure_severe_c", 4.0), "severe departure"),
         (set_path("target", "absolute_heatwave_c", 39.0), "absolute_severe"),
         (set_path("target", "tmax_source", "station"), "tmax_source"),
+        (set_path("target", "bias_fit_period", None), "needs bias_reference"),
+        (set_path("target", "bias_reference", "satellite"), "bias_reference must be"),
         (
             set_path("season", "training", {"start": "03-15", "end": "07-15"}),
             "cover the evaluation",

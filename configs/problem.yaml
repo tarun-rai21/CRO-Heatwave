@@ -12,8 +12,10 @@ dates:                         # reference.md §1.3
   horizon_max: 10
 
 season:                        # reference.md §3.1, §4.3
-  evaluation: {start: "03-01", end: "06-30"}   # provisional until label QA (Phase 4)
-  training: {start: "02-15", end: "07-15"}     # season plus shoulders
+  # Phase 4 (docs/decisions/005): stations put 16.5 % of heatwave days in July
+  # (pre-monsoon-onset heat), August 0.5 %.
+  evaluation: {start: "03-01", end: "07-31"}
+  training: {start: "02-15", end: "08-15"}     # season plus shoulders
 
 target:                        # reference.md §2.4
   # The IMD plains heatwave-day CONDITION at district level, not IMD's
@@ -27,10 +29,17 @@ target:                        # reference.md §2.4
   round_decimals: 1            # IMD reports 0.1 C; values rounded before comparison
   normal:
     period: [1991, 2020]       # IMD's current normals period
-    smoothing: harmonics       # harmonics | window; final choice in Phase 4
-    n_harmonics: 3
-  # Decided by measurement in Phase 4: power | power_bias_corrected | imd_gridded
-  tmax_source: undecided
+    smoothing: harmonics       # decided in Phase 4: best out-of-sample (docs/decisions/005)
+    n_harmonics: 6
+  # Decided in Phase 4 (docs/decisions/005): POWER district Tmax mapped (monthly
+  # quantiles) to station levels. POWER runs ~2-3 C warm vs UP stations; IMD's
+  # 1-degree grid runs cool on hot days.
+  tmax_source: power_bias_corrected
+  bias_reference: gsod_stations  # NOAA GSOD reported station maxima in/near UP
+  # POWER's warm bias is ~1 C smaller over Bundelkhand: a lat/lon plane of the
+  # district mean (POWER - IMD) is removed before mapping to station levels.
+  bias_spatial: imd_plane
+  bias_fit_period: [1991, 2020]  # map and plane fitted once, part of the label definition
 
 onset:                         # reference.md §3.5
   lookback_days: 3             # onset case: no heatwave day in the 3 days up to t

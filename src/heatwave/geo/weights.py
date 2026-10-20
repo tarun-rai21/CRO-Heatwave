@@ -149,9 +149,30 @@ def build_geo(data_cfg: dict, root: Path) -> dict:
     weights.to_parquet(out_dir / "district_grid_weights.parquet", index=False)
     overlap.to_parquet(out_dir / "district_overlap.parquet", index=False)
 
+    # The same district polygons on IMD's 1-degree grid (label comparison, Phase 4).
+    imd = data_cfg["imd"]
+    imd_grid = Grid(
+        name="imd1",
+        lat_origin=float(imd["lat_first"]),
+        lon_origin=float(imd["lon_first"]),
+        dlat=float(imd["step_deg"]),
+        dlon=float(imd["step_deg"]),
+    )
+    imd_cells = candidate_cells(districts, imd_grid, geo["densify_deg"])
+    imd_weights = district_grid_weights(districts, imd_cells, crs, geo["min_weight"])
+    imd_weights = imd_weights.merge(imd_cells[["cell_id", "lat", "lon"]], on="cell_id")
+    imd_weights.to_parquet(out_dir / "district_imd_weights.parquet", index=False)
+
     centroid_counts = dtable["centroid_cell_id"].value_counts()
     shared = centroid_counts[centroid_counts > 1]
+    imd_per_district = imd_weights.groupby("district_id").size()
     return {
+        "imd_cells_overlapping": int(imd_weights["cell_id"].nunique()),
+        "imd_cells_per_district_min_median_max": [
+            int(imd_per_district.min()),
+            float(imd_per_district.median()),
+            int(imd_per_district.max()),
+        ],
         "districts": len(dtable),
         "grid_cells_to_fetch": len(grid_cells),
         "cells_per_district_min_median_max": [

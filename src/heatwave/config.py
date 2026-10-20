@@ -18,6 +18,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CONFIG_DIR = REPO_ROOT / "configs"
 
 TMAX_SOURCES = {"undecided", "power", "power_bias_corrected", "imd_gridded"}
+BIAS_REFERENCES = {"none", "gsod_stations", "imd_gridded"}
+BIAS_SPATIAL = {"none", "imd_plane"}
 NORMAL_SMOOTHING = {"harmonics", "window"}
 
 
@@ -60,6 +62,9 @@ class HeatwaveRule:
     normal_smoothing: str
     normal_n_harmonics: int
     tmax_source: str
+    bias_reference: str
+    bias_spatial: str
+    bias_fit_period: Years | None
 
 
 @dataclass(frozen=True)
@@ -150,6 +155,11 @@ def _parse(raw: dict[str, Any]) -> Problem:
             normal_smoothing=normal["smoothing"],
             normal_n_harmonics=int(normal["n_harmonics"]),
             tmax_source=target["tmax_source"],
+            bias_reference=target.get("bias_reference", "none"),
+            bias_spatial=target.get("bias_spatial", "none"),
+            bias_fit_period=(
+                _years(target["bias_fit_period"]) if target.get("bias_fit_period") else None
+            ),
         ),
         onset_lookback_days=int(raw["onset"]["lookback_days"]),
         validation=Validation(
@@ -204,6 +214,15 @@ def validate_problem(p: Problem) -> None:
     check(t.normal_smoothing in NORMAL_SMOOTHING, f"smoothing must be one of {NORMAL_SMOOTHING}")
     check(t.normal_n_harmonics >= 1, "n_harmonics must be >= 1")
     check(t.tmax_source in TMAX_SOURCES, f"tmax_source must be one of {TMAX_SOURCES}")
+    check(t.bias_reference in BIAS_REFERENCES, f"bias_reference must be one of {BIAS_REFERENCES}")
+    check(t.bias_spatial in BIAS_SPATIAL, f"bias_spatial must be one of {BIAS_SPATIAL}")
+    corrected = t.tmax_source == "power_bias_corrected"
+    check(
+        not corrected or (t.bias_reference != "none" and t.bias_fit_period is not None),
+        "power_bias_corrected needs bias_reference and bias_fit_period",
+    )
+    if t.bias_fit_period is not None:
+        check(t.bias_fit_period[0] <= t.bias_fit_period[1], "bias_fit_period is reversed")
 
     # Blocks: ordered and disjoint
     v = p.validation

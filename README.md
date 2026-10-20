@@ -2,7 +2,7 @@
 
 Probabilistic heatwave forecasts for all 75 districts of Uttar Pradesh, for each of the next 10 days. Built for UP government weather officials: forecasts are produced daily, published with alert tiers, and verified against what actually happened.
 
-**Status:** Phases 0–3 complete (setup, geography, ingestion, data quality). Phase 4 (labels) next. V1.0 goes live on 1 March 2027.
+**Status:** Phases 0–4 complete (setup, geography, ingestion, data quality, labels). Phase 5 (features) next. V1.0 goes live on 1 March 2027.
 
 Everything about the design (target, data, labels, validation, models, architecture, phases) is in **[`reference.md`](reference.md)**. Read that first.
 
@@ -27,7 +27,8 @@ uv run heatwave show-problem
 | `configs/problem.yaml` | Frozen problem definition (dates, label rule, splits, tiers), validated on load |
 | `configs/data.yaml` | Boundaries, grid, NASA POWER and IMD settings |
 | `configs/quality.yaml` | Data-quality rules and reviewed flags |
-| `reports/` | Generated reports (e.g. `data_qa.md`) |
+| `configs/labels.yaml` | Label build, sensitivity labels and label QA settings |
+| `reports/` | Generated reports: `data_qa.md`, `label_source_comparison.md`, `label_qa.md` |
 | `src/heatwave/` | Package; every pipeline step is a `heatwave` CLI command |
 | `tests/` | `pytest` tests, run in CI on every push (`tests/data/` skip when local data is absent) |
 | `docs/decisions/` | Short notes recording decisions and verifications |

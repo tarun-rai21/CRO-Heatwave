@@ -1,0 +1,35 @@
+# Label build and QA settings (Phase 4, docs/decisions/005).
+# The label DEFINITION (rule, normal, source, bias period) is in problem.yaml;
+# this file holds how stations qualify, the sensitivity labels and the QA.
+
+stations:
+  # A station feeds the bias map only with enough good heat seasons in the fit
+  # period: >= min_seasons seasons whose Mar-Jun days have a reported maximum at
+  # least min_coverage of the time.
+  min_seasons: 10
+  min_coverage: 0.7
+  season_months: [3, 4, 5, 6]
+  # Stations that do not qualify but have at least this many reported season days
+  # are scored as out-of-sample checks (maps fitted on the qualifying stations).
+  check_min_season_days: 400
+
+sensitivity:
+  # If conclusions change between labels, they are fragile (reference.md §2.4).
+  imd_label: true                 # same rule on IMD gridded district Tmax, own normal
+  percentile:                     # Tmax above the calendar-day q-th percentile ...
+    q: 0.95
+    window_days: 7                # ... of the 1991-2020 values within +/- this many days
+    min_run_days: 3               # ... for at least this many consecutive days
+
+episodes:
+  # State-wide episode = consecutive days on which at least min_districts
+  # districts are heatwave days.
+  min_districts: 1
+
+qa:
+  # Seasons expected to stand out (reference.md §2.4). Final-test years are
+  # listed for the record; nothing is decided on them.
+  known_severe_seasons: [1988, 1994, 1995, 1998, 2010, 2015, 2019, 2022, 2024]
+  # Months enter the evaluation season if they hold more than this share of
+  # development-year heatwave days (reference.md §3.1).
+  season_month_min_share: 0.01

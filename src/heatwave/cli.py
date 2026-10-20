@@ -9,6 +9,9 @@ Commands:
     uv run heatwave ingest-imd         IMD gridded Tmax, 1981 to last full year (resumable)
     uv run heatwave qa-report          full-history data QA -> reports/data_qa.md
     uv run heatwave validate           daily gate: hard checks, completeness, latency
+    uv run heatwave build-district-daily  cells -> district daily tables (silver)
+    uv run heatwave ingest-gsod        NOAA station maxima, development years
+    uv run heatwave build-labels       labels, episodes, label reports
     uv run heatwave hub-push-all       upload reference/raw/runs to Hugging Face
     uv run heatwave hub-pull           download them
 """
@@ -120,12 +123,93 @@ def cmd_hub_push_all(args: argparse.Namespace) -> None:
         print(f"merged {merged} run-log rows written remotely since the last pull")
     files = sorted(
         f
-        for sub in ("reference", "raw", "runs")
+        for sub in ("reference", "raw", "runs", "labels")
         for f in (paths.root / sub).rglob("*")
         if f.is_file()
     )
     n = hub.push(cfg, paths.root, files, "sync reference, raw and runs")
     print(f"uploaded {n} files")
+
+
+def cmd_ingest_gsod(args: argparse.Namespace) -> None:
+    import requests
+
+    from heatwave.geo.weights import load_districts
+    from heatwave.ingest import gsod
+
+    cfg, paths = _ingest_context()
+    g = cfg["gsod"]
+    resp = requests.get(g["history_url"], timeout=120)
+    resp.raise_for_status()
+    up = load_districts(cfg["boundaries"], REPO_ROOT).geometry.union_all()
+    stations = gsod.station_list(resp.content, up, g["boundary_buffer_deg"])
+    stations.to_parquet(paths.root / "reference" / "stations.parquet", index=False)
+    print(f"{len(stations)} stations in or near UP")
+    manifest = gsod.download(g, stations, paths.root / g["raw_dir"])
+    ok = manifest[manifest["status"] == "ok"]
+    print(f"{len(ok)} station-years downloaded from {ok['station_id'].nunique()} stations")
+
+
+def cmd_build_labels(args: argparse.Namespace) -> None:
+    from heatwave.labels.pipeline import run
+
+    cfg, paths = _ingest_context()
+    summary = run(
+        load_problem(),
+        cfg,
+        read_yaml("labels.yaml"),
+        paths.root,
+        REPO_ROOT / "reports",
+        REPO_ROOT / cfg["outputs"]["silver_dir"],
+    )
+    print(json.dumps(summary, indent=2, default=str))
+
+
+def cmd_build_district_daily(args: argparse.Namespace) -> None:
+    from heatwave.geo.aggregate import imd_district_daily, power_district_daily
+    from heatwave.ingest.imd import ImdSettings
+    from heatwave.ingest.raw_store import RawStore
+
+    cfg, paths = _ingest_context()
+    ref = paths.root / "reference"
+    out_dir = REPO_ROOT / cfg["outputs"]["silver_dir"]
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    power = power_district_daily(
+        RawStore(paths.raw_power),
+        pd.read_parquet(ref / "district_grid_weights.parquet"),
+        cfg["power"]["parameters"],
+        cfg["geo"]["cellmax_min_share"],
+    )
+    power.to_parquet(out_dir / "power_district_daily.parquet", index=False)
+
+    imd_cfg = cfg["imd"]
+    imd_dir = paths.root / imd_cfg["raw_dir"]
+    years = sorted(int(p.stem) for p in imd_dir.glob("*.GRD"))
+    imd = imd_district_daily(
+        ImdSettings.from_config(imd_cfg),
+        imd_dir,
+        years,
+        pd.read_parquet(ref / "district_imd_weights.parquet"),
+    )
+    imd.to_parquet(out_dir / "imd_district_daily.parquet", index=False)
+    print(
+        json.dumps(
+            {
+                "power_rows": len(power),
+                "power_period": [
+                    str(power.obs_date.min().date()),
+                    str(power.obs_date.max().date()),
+                ],
+                "power_missing_cell_values": int(power["n_missing"].sum()),
+                "imd_rows": len(imd),
+                "imd_period": [str(imd.obs_date.min().date()), str(imd.obs_date.max().date())],
+                "imd_missing_cell_values": int(imd["n_missing"].sum()),
+                "districts": int(power["district_id"].nunique()),
+            },
+            indent=2,
+        )
+    )
 
 
 def cmd_qa_report(args: argparse.Namespace) -> None:
@@ -174,7 +258,7 @@ def cmd_hub_pull(args: argparse.Namespace) -> None:
     from heatwave import hub
 
     cfg, paths = _ingest_context()
-    hub.pull(cfg, paths.root, ["reference/*", "raw/**", "runs/*"])
+    hub.pull(cfg, paths.root, ["reference/*", "raw/**", "runs/*", "labels/*"])
     print(f"pulled into {paths.root}")
 
 
@@ -199,6 +283,15 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("check-raw", help="completeness of the raw store").set_defaults(
         func=cmd_check_raw
     )
+    sub.add_parser(
+        "build-district-daily", help="cells -> district daily tables for POWER and IMD (silver)"
+    ).set_defaults(func=cmd_build_district_daily)
+    sub.add_parser(
+        "ingest-gsod", help="NOAA station daily maxima for UP, development years (resumable)"
+    ).set_defaults(func=cmd_ingest_gsod)
+    sub.add_parser(
+        "build-labels", help="station comparison, bias map, labels, episodes, QA reports"
+    ).set_defaults(func=cmd_build_labels)
     sub.add_parser("qa-report", help="full-history data QA -> reports/data_qa.md").set_defaults(
         func=cmd_qa_report
     )
@@ -209,7 +302,7 @@ def main(argv: list[str] | None = None) -> None:
     imd.add_argument("--last-year", help="last year to download (default: last full year)")
     imd.set_defaults(func=cmd_ingest_imd)
     sub.add_parser(
-        "hub-push-all", help="upload reference, raw and runs to Hugging Face"
+        "hub-push-all", help="upload reference, raw, runs and labels to Hugging Face"
     ).set_defaults(func=cmd_hub_push_all)
     sub.add_parser(
         "hub-pull", help="download reference, raw and runs from Hugging Face"
