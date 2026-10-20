@@ -97,3 +97,19 @@ def test_metadata_columns(store):
     r = store.read().iloc[0]
     assert r["run_id"] == "run1" and r["api_version"] == "v2.10.0"
     assert r["ingested_at"] == T1
+
+
+def test_run_id_clash_in_any_year_writes_nothing(store):
+    store.append(rows(("c1", date(2026, 5, 1), "T2M_MAX", 40.0)), "run1", T1, "v1")
+    two_years = rows(
+        ("c1", date(2025, 5, 1), "T2M_MAX", 38.0), ("c1", date(2026, 5, 1), "T2M_MAX", 41.0)
+    )
+    with pytest.raises(FileExistsError):
+        store.append(two_years, "run1", T2, "v1")
+    assert store.years() == [2026]  # nothing was written for 2025
+
+
+def test_new_variable_is_added_without_rewriting_existing_ones(store):
+    store.append(rows(("c1", date(2026, 5, 1), "T2M_MAX", 40.0)), "run1", T1, "v1")
+    both = rows(("c1", date(2026, 5, 1), "T2M_MAX", 40.0), ("c1", date(2026, 5, 1), "U10M", 1.5))
+    assert store.append(both, "run2", T2, "v1") == 1

@@ -7,6 +7,8 @@ Commands:
     uv run heatwave ingest-daily       trailing-window re-fetch (--sync: via Hugging Face)
     uv run heatwave check-raw          completeness of the raw store
     uv run heatwave ingest-imd         IMD gridded Tmax, 1981 to last full year (resumable)
+    uv run heatwave qa-report          full-history data QA -> reports/data_qa.md
+    uv run heatwave validate           daily gate: hard checks, completeness, latency
     uv run heatwave hub-push-all       upload reference/raw/runs to Hugging Face
     uv run heatwave hub-pull           download them
 """
@@ -113,6 +115,9 @@ def cmd_hub_push_all(args: argparse.Namespace) -> None:
     from heatwave import hub
 
     cfg, paths = _ingest_context()
+    merged = hub.merge_remote_log(cfg, paths.root, paths.runs_log)
+    if merged:
+        print(f"merged {merged} run-log rows written remotely since the last pull")
     files = sorted(
         f
         for sub in ("reference", "raw", "runs")
@@ -121,6 +126,29 @@ def cmd_hub_push_all(args: argparse.Namespace) -> None:
     )
     n = hub.push(cfg, paths.root, files, "sync reference, raw and runs")
     print(f"uploaded {n} files")
+
+
+def cmd_qa_report(args: argparse.Namespace) -> None:
+    from heatwave.quality.report import build_report
+
+    cfg, paths = _ingest_context()
+    summary = build_report(
+        cfg, read_yaml("quality.yaml"), paths, REPO_ROOT / "reports" / "data_qa.md"
+    )
+    print(json.dumps(summary, indent=2))
+    if not summary["ok"]:
+        raise SystemExit("data QA failed: see reports/data_qa.md")
+
+
+def cmd_validate(args: argparse.Namespace) -> None:
+    from heatwave.ingest.run import utc_now
+    from heatwave.quality.report import validate_recent
+
+    cfg, paths = _ingest_context()
+    result = validate_recent(cfg, read_yaml("quality.yaml"), paths, utc_now().date())
+    print(json.dumps(result, indent=2, default=str))
+    if not result["ok"]:
+        raise SystemExit("validation failed: " + "; ".join(result["problems"]))
 
 
 def cmd_ingest_imd(args: argparse.Namespace) -> None:
@@ -170,6 +198,12 @@ def main(argv: list[str] | None = None) -> None:
 
     sub.add_parser("check-raw", help="completeness of the raw store").set_defaults(
         func=cmd_check_raw
+    )
+    sub.add_parser("qa-report", help="full-history data QA -> reports/data_qa.md").set_defaults(
+        func=cmd_qa_report
+    )
+    sub.add_parser("validate", help="daily gate: hard checks, completeness, latency").set_defaults(
+        func=cmd_validate
     )
     imd = sub.add_parser("ingest-imd", help="download IMD 1-degree gridded Tmax (resumable)")
     imd.add_argument("--last-year", help="last year to download (default: last full year)")

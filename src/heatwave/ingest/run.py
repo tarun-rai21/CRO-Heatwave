@@ -9,6 +9,7 @@ and raises, so the scheduler reports a failure.
 from __future__ import annotations
 
 import gzip
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -119,7 +120,10 @@ def daily_window(today: date, trailing_days: int) -> tuple[date, date]:
 
 def _cached_fetch(client: PowerClient, cell, start: date, end: date, cache: Path | None) -> dict:
     if cache is not None:
-        path = cache / f"{cell.cell_id}_{start:%Y%m%d}_{end:%Y%m%d}.json.gz"
+        # The key includes the parameter list, so a changed list never reuses a
+        # response that lacks the new parameters.
+        params = hashlib.sha256(",".join(client.s.parameters).encode()).hexdigest()[:8]
+        path = cache / f"{cell.cell_id}_{start:%Y%m%d}_{end:%Y%m%d}_{params}.json.gz"
         if path.exists():
             with gzip.open(path, "rt", encoding="utf-8") as f:
                 return json.load(f)
@@ -184,19 +188,22 @@ def _append_run_log(path: Path, summary: dict) -> None:
 
 def check_spine(paths: Paths, start: date, variables: list[str]) -> dict:
     """Completeness of the best-known raw data: every cell x variable must have a
-    row for every date from `start` to that variable's last published date."""
+    row for every date from `start` to that variable's last published date.
+    Only `variables` are considered: retired ones (e.g. WD10M) stay in the raw
+    store for audit but are not part of the current data set."""
     store = RawStore(paths.raw_power)
     sql = store.best_sql()
     if sql is None:
         raise RuntimeError("raw store is empty; run the backfill first")
     cells = set(pd.read_parquet(paths.grid_cells)["cell_id"])
+    var_list = ", ".join(f"'{v}'" for v in variables)
 
     with duckdb.connect() as con:
         per = con.sql(
             f"""
             SELECT cell_id, variable, count(*) AS n_rows, count(value) AS n_values,
                    min(obs_date) AS first_date, max(obs_date) AS last_date
-            FROM ({sql}) GROUP BY cell_id, variable
+            FROM ({sql}) WHERE variable IN ({var_list}) GROUP BY cell_id, variable
             """
         ).df()
 

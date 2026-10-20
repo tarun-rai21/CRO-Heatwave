@@ -60,3 +60,18 @@ First daily run with sync (`20261006T225641Z-daily`, an hour later): 144,432 val
 `.github/workflows/daily-ingest.yml`, 03:30 UTC (09:00 IST): pull the needed partitions from Hugging Face → fetch the trailing 120 days for all cells → append changes → push the new files and the run log in one commit.
 
 **Operational risk noted:** GitHub disables scheduled workflows in public repositories after 60 days without repository activity. Commits during development keep it alive. Phase 9 must add a keep-alive before the live season.
+
+## Exit criterion and latency decision (2026-10-20)
+
+**Exit criterion met:** 13 consecutive scheduled daily runs (7–19 Oct) succeeded unattended, with all 102 cells every time. Each normally added 1,224 values (102 cells × 12 variables × 1 new day). No provisional → final revisions have arrived yet, as expected, since POWER replaces GEOS-IT with MERRA-2 only every several months.
+
+**Measured latency:** 3 days on 11 runs, **4 days on 2** (13 and 16 Oct, when POWER skipped a day and then published two at once).
+
+| Option | Effect |
+|---|---|
+| (a) Keep `L = 3`; on a late day run from one-day-older data and publish 9 valid days flagged "data 1 day late" | Most days keep the full 10-day forecast |
+| (b) `L = 4` | Always 10 days, but every forecast loses a day of lead |
+
+**Decision: (a)**, chosen by the project owner. `L = 3` stays in `configs/problem.yaml`; the late-day rule is in reference.md §1.3 and §5.5. Revisit if the late-day share grows well beyond ~15 %. The run log keeps measuring it.
+
+**Also observed:** GitHub starts the 03:30 UTC schedule late, at 07:56–11:10 UTC so far. Harmless for ingestion; the publish time matters in Phase 9.

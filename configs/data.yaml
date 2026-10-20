@@ -48,8 +48,12 @@ power:
   fill_value: -999.0
   start: "1981-01-01"
   # Solar parameters excluded (5-7 day latency): reference.md §2.1.
+  # WD10M (wind direction) is NOT fetched: POWER returns invalid values (-98,990
+  # to -5,000 degrees) for every cell from 2012-12-31 onward. U10M/V10M replace it;
+  # before 2013 WD10M equals the direction of mean (U10M, V10M) to 0.1 deg.
+  # See docs/decisions/004. Old WD10M rows stay in the raw store for audit.
   parameters: [T2M_MAX, T2M_MIN, T2M, T2MDEW, RH2M, QV2M, PRECTOTCORR,
-               WS10M, WD10M, PS, GWETTOP, GWETROOT]
+               WS10M, U10M, V10M, PS, GWETTOP, GWETROOT]
   # Daily run re-fetches this many trailing days to capture GEOS-IT -> MERRA-2
   # revisions (reference.md §2.3).
   trailing_days: 120

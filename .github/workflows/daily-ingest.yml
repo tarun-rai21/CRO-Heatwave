@@ -34,3 +34,8 @@ jobs:
 
       - name: Ingest trailing window (pull, fetch, append, push)
         run: uv run heatwave ingest-daily --sync
+
+      # Fails the run (GitHub emails the repo owner) on impossible values, a cell
+      # missing the newest day, or data older than the latency limit.
+      - name: Validate
+        run: uv run heatwave validate

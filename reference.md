@@ -29,10 +29,12 @@ NASA POWER data arrives roughly 2–3 days late, so three dates are kept separat
 | Name | Meaning |
 |---|---|
 | **As-of date `t`** | Last day with observed data. Every input uses only data up to `t`. |
-| **Issue date `s = t + L`** | The day the forecast is produced. `L` = data latency (about 3 days; confirmed from real data). |
+| **Issue date `s = t + L`** | The day the forecast is produced. **`L = 3`**: measured latency was 3 days on 11 of the first 13 daily runs and 4 days on 2 (decision record 003). |
 | **Valid date `s + h`** | The day being forecast, `h = 1..10`. |
 
 Training applies the same `L` as production. Otherwise a "1-day-ahead" forecast would really be for a day that has already happened.
+
+**Late-data days** (newest data is `s − 4` instead of `s − 3`): the model is still run exactly as trained, from as-of date `t = s − 4`. Its output is therefore anchored one day earlier, and its last lead falls on `s + 9`. The published forecast covers valid dates `s + 1 .. s + 9` (9 days), marked **"data 1 day late"**. No re-training or re-labelling of leads is done for these days. Older data than that follows the failure policy (§5.5).
 
 **Expectation to test, not assume:** without NWP inputs (see §1.5), useful skill probably fades after about 3–5 days of lead. The project measures where it actually fades (the "skill horizon").
 
@@ -78,7 +80,7 @@ A **team of Uttar Pradesh government weather officials.** What follows from that
 | Missing values | POWER's fill value (−999) becomes null at ingestion and never reaches a calculation |
 | Rejected | ERA5/ERA5-Land (~5-day latency costs lead time); IMD gridded as an input source (coarse, slow updates) |
 
-**Variables (12; POWER allows 20 per request):**
+**Variables (13; POWER allows 20 per request):**
 
 | POWER name | Meaning |
 |---|---|
@@ -86,7 +88,8 @@ A **team of Uttar Pradesh government weather officials.** What follows from that
 | `T2MDEW` | Dew point |
 | `RH2M`, `QV2M` | Relative / specific humidity |
 | `PRECTOTCORR` | Precipitation |
-| `WS10M`, `WD10M` | Wind speed / direction at 10 m (direction is circular: never average raw degrees) |
+| `WS10M` | Wind speed at 10 m |
+| `U10M`, `V10M` | Eastward / northward wind at 10 m. Replace `WD10M` (direction), which POWER serves with invalid values for every cell from 2012-12-31 onward (decision record 004). Direction, if needed, is derived from U/V |
 | `PS` | Surface pressure |
 | `GWETTOP`, `GWETROOT` | Surface / root-zone soil wetness |
 
@@ -364,7 +367,8 @@ Raw POWER history is roughly 20 M values (102 cells × ~16,700 days × 12 variab
 
 | Situation | Behaviour |
 |---|---|
-| Data age ≤ `L` + 2 days | Forecast with the latest data; show data age |
+| Data age = `L` + 1 days (one day late) | Forecast from the latest data as described in §1.3: 9 valid days, flagged "data 1 day late" |
+| Data age = `L` + 2 days | Same, 8 valid days, flagged with the data age |
 | Data age > `L` + 2 days | Publish **climatology only**, flagged *degraded*. Never silently reuse yesterday's forecast |
 | Validation fails | No model forecast; alert; publish degraded climatology |
 | Same day re-run | Overwrites by key; identical inputs must give identical outputs (tested) |
@@ -491,3 +495,5 @@ Weeks start on Mondays. Each phase still ends on its exit criterion: if a phase 
 | 2026-10-07 | 5 | Architecture agreed: GitHub Actions daily run, private Hugging Face dataset for data, Parquet + DuckDB, static GitHub Pages site, public code repo |
 | 2026-10-07 | 6 | Fully live 1 Mar 2027 (fallback 1 Apr) with M2 as v1.0; LightGBM moved to a post-season challenger; Dockerfile deferred |
 | 2026-10-07 | 5.7 | Makefile dropped from the layout (no `make` on Windows; the `heatwave` CLI covers it) |
+| 2026-10-20 | 1.3, 5.5 | `L = 3` kept after 13 days of measured latency (3 d on 11 runs, 4 d on 2); late-data days publish a 9-day forecast flagged "data 1 day late" |
+| 2026-10-20 | 2.1 | `WD10M` replaced by `U10M`/`V10M` after finding invalid POWER wind directions from 2012-12-31 onward |

@@ -48,6 +48,32 @@ def push(cfg: dict, root: Path, files: list[Path], message: str) -> int:
     return len(ops)
 
 
+def merge_remote_log(cfg: dict, root: Path, log_path: Path) -> int:
+    """Union the local run log with the remote one (by run_id) before a push, so a
+    laptop upload never drops rows written by the scheduled job meanwhile.
+    Returns the number of remote-only rows merged in."""
+    import pandas as pd
+    from huggingface_hub import hf_hub_download
+    from huggingface_hub.errors import EntryNotFoundError
+
+    try:
+        remote_file = hf_hub_download(
+            repo_id(cfg),
+            log_path.relative_to(root).as_posix(),
+            repo_type=cfg["hub"]["repo_type"],
+            force_download=True,
+        )
+    except EntryNotFoundError:
+        return 0
+    remote = pd.read_parquet(remote_file)
+    local = pd.read_parquet(log_path) if log_path.exists() else remote.iloc[0:0]
+    extra = remote[~remote["run_id"].isin(local["run_id"])]
+    if not extra.empty:
+        merged = pd.concat([local, extra], ignore_index=True).sort_values("started_at")
+        merged.to_parquet(log_path, index=False)
+    return len(extra)
+
+
 def files_of_run(raw_power: Path, run_id: str) -> list[Path]:
     """The raw files a run created (one per observation year it touched)."""
     return sorted(raw_power.glob(f"obs_year=*/{run_id}.parquet"))

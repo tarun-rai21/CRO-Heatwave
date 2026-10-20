@@ -97,36 +97,46 @@ class RawStore:
 
         new = values[KEY + ["value"]].copy()
         new["obs_date"] = pd.to_datetime(new["obs_date"]).dt.date
-        years = sorted({d.year for d in new["obs_date"]})
+        year_of = pd.to_datetime(new["obs_date"]).dt.year
+        years = sorted(year_of.unique().tolist())
 
-        current = self.best(years)
-        if current.empty:
-            changed = new
-        else:
-            current = current[KEY + ["value"]].rename(columns={"value": "old"})
-            current["obs_date"] = pd.to_datetime(current["obs_date"]).dt.date
-            merged = new.merge(current, on=KEY, how="left", indicator=True)
-            is_new = merged["_merge"] == "left_only"
-            changed = merged[is_new | ~_same(merged["value"], merged["old"])][KEY + ["value"]]
+        # Refuse before writing anything, so a reused run id cannot leave a partial run.
+        clashes = [self.year_dir(y) / f"{run_id}.parquet" for y in years]
+        clashes = [p for p in clashes if p.exists()]
+        if clashes:
+            raise FileExistsError(f"{clashes[0]} already exists; run ids must be unique")
 
-        if changed.empty:
-            return 0
-        changed = changed.assign(
-            ingested_at=pd.Timestamp(ingested_at).tz_convert("UTC"),
-            run_id=run_id,
-            api_version=api_version,
-        )
-        year_of = pd.to_datetime(changed["obs_date"]).dt.year
-        for year, part in changed.groupby(year_of):
+        written = 0
+        # One observation year at a time keeps memory bounded on full-history runs.
+        for year, part in new.groupby(year_of):
+            changed = self._changed(part, int(year))
+            if changed.empty:
+                continue
+            changed = changed.assign(
+                ingested_at=pd.Timestamp(ingested_at).tz_convert("UTC"),
+                run_id=run_id,
+                api_version=api_version,
+            )
             out = self.year_dir(int(year)) / f"{run_id}.parquet"
-            if out.exists():
-                raise FileExistsError(f"{out} already exists; run ids must be unique")
             out.parent.mkdir(parents=True, exist_ok=True)
             table = pa.Table.from_pandas(
-                part.sort_values(KEY).reset_index(drop=True), schema=SCHEMA, preserve_index=False
+                changed.sort_values(KEY).reset_index(drop=True), schema=SCHEMA, preserve_index=False
             )
             pq.write_table(table, out, compression="zstd")
-        return len(changed)
+            written += len(changed)
+        return written
+
+    def _changed(self, new: pd.DataFrame, year: int) -> pd.DataFrame:
+        """Rows of `new` (all in `year`) that are absent from, or differ from, the
+        latest stored version."""
+        current = self.best([year])
+        if current.empty:
+            return new
+        current = current[KEY + ["value"]].rename(columns={"value": "old"})
+        current["obs_date"] = pd.to_datetime(current["obs_date"]).dt.date
+        merged = new.merge(current, on=KEY, how="left", indicator=True)
+        is_new = merged["_merge"] == "left_only"
+        return merged[is_new | ~_same(merged["value"], merged["old"])][KEY + ["value"]]
 
 
 def _same(a: pd.Series, b: pd.Series) -> np.ndarray:
