@@ -108,6 +108,7 @@ Solar radiation is **excluded**: its 5–7 day latency would delay every forecas
 - The **daily job re-downloads the last ~120 days**, which catches provisional → final replacements.
 - **Start the daily download job early,** well before any model exists. Months of provisional-vs-final pairs are needed to measure the gap between training data (final) and live data (provisional).
 - Log the observed latency every day (today minus the latest date with data). This confirms or changes `L`.
+- **Known upstream defects** are quarantined by rule (`configs/data.yaml` `known_defects`), never corrected in place. Best-known views fall back to the last good version, else return the value as missing; `validate` reports active defects instead of failing on them (decision record 007: POWER rainfall ×24 from 21 Oct 2026).
 
 ### 2.4 Heatwave label
 
@@ -513,3 +514,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-10-20 | 4.2, 4.3 | Features implemented (43; dictionary in docs/features.md); fold tables stop at their validation years; no near-duplicate row weighting in V1 |
 | 2026-10-20 | 3.7 | Gate G1 passed with a recorded exception after the drift term; the per-station year check is now primary |
 | 2026-10-20 | 6.1, 6.2, 4.4, 3.7 | Ahead of schedule: LightGBM (M3) built before go-live in Phase 7; G3 picks the production model; shadow mode Dec–Feb; plan dates revised; live season March–July |
+| 2026-10-25 | 2.3 | Known-defect quarantine rule added after POWER's ×24 rainfall revision (decision record 007) |

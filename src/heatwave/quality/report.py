@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from heatwave.ingest.raw_store import RawStore
+from heatwave.ingest.raw_store import RawStore, defects_from_config
 from heatwave.ingest.run import Paths, check_spine
 from heatwave.quality import checks
 
@@ -32,8 +32,9 @@ def build_report(data_cfg: dict, quality_cfg: dict, paths: Paths, out: Path) -> 
         raise ValueError("configs/quality.yaml ranges must cover exactly the POWER parameters")
 
     start = date.fromisoformat(data_cfg["power"]["start"])
-    spine = check_spine(paths, start, data_cfg["power"]["parameters"])
-    wide = checks.load_wide(RawStore(paths.raw_power), variables)
+    defects = defects_from_config(data_cfg)
+    spine = check_spine(paths, start, data_cfg["power"]["parameters"], defects)
+    wide = checks.load_wide(RawStore(paths.raw_power, defects), variables)
     cells = pd.read_parquet(paths.grid_cells)
 
     hard = checks.hard_failures(wide, quality_cfg["hard"])
@@ -133,12 +134,18 @@ def validate_recent(data_cfg: dict, quality_cfg: dict, paths: Paths, today: date
     observation year, every cell present on the newest day, and latency."""
     variables = list(quality_cfg["hard"]["ranges"])
     years = sorted({today.year, (pd.Timestamp(today) - pd.Timedelta(days=120)).year})
-    wide = checks.load_wide(RawStore(paths.raw_power), variables, years)
+    defects = defects_from_config(data_cfg)
+    store = RawStore(paths.raw_power, defects)
+    wide = checks.load_wide(store, variables, years)
     cells = set(pd.read_parquet(paths.grid_cells)["cell_id"])
+    active = quarantined_counts(store, years)
 
     hard = checks.hard_failures(wide, quality_cfg["hard"])
     newest = wide["obs_date"].max()
-    complete_on_newest = wide.loc[wide["obs_date"] == newest].dropna(subset=variables)
+    # Variables held back by an active known defect are reported, not failed on.
+    exempt = {d.variable for d in defects if active.get(d.id, 0) > 0}
+    required = [v for v in variables if v not in exempt]
+    complete_on_newest = wide.loc[wide["obs_date"] == newest].dropna(subset=required)
     missing_cells = sorted(cells - set(complete_on_newest["cell_id"]))
     latency = (pd.Timestamp(today) - newest).days
     max_latency = quality_cfg["hard"]["max_latency_days"]
@@ -157,4 +164,20 @@ def validate_recent(data_cfg: dict, quality_cfg: dict, paths: Paths, today: date
         "latency_days": latency,
         "hard_failures": hard.head(20).to_dict("records"),
         "missing_cells": missing_cells[:20],
+        "known_defects_active": active,
     }
+
+
+def quarantined_counts(store: RawStore, years) -> dict[str, int]:
+    """Number of best-known values each known defect is holding back."""
+    sql = store.best_sql(years)
+    if sql is None or not store.defects:
+        return {}
+    import duckdb
+
+    with duckdb.connect() as con:
+        rows = con.sql(
+            f"SELECT quarantined, count(*) FROM ({sql}) WHERE quarantined IS NOT NULL "
+            "GROUP BY quarantined"
+        ).fetchall()
+    return {k: int(n) for k, n in rows}

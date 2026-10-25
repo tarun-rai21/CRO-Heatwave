@@ -64,7 +64,7 @@ def station_inputs(data_cfg: dict, root: Path, years: tuple[int, int]) -> pd.Dat
 
     grid = Grid.from_config(data_cfg["grid"])
     stations["cell_id"] = grid.cell_ids(stations["lat"], stations["lon"])
-    store = RawStore(root / data_cfg["storage"]["raw_power_dir"])
+    store = RawStore.from_config(data_cfg, root)
     best = store.best(range(years[0], years[1] + 1))
     best = best[(best["variable"] == "T2M_MAX") & best["cell_id"].isin(stations["cell_id"])]
     best["obs_date"] = pd.to_datetime(best["obs_date"])

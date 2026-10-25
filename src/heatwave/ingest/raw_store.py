@@ -15,6 +15,7 @@ vs final (MERRA-2) differences.
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import dataclass
 from pathlib import Path
 
 import duckdb
@@ -37,9 +38,57 @@ SCHEMA = pa.schema(
 )
 
 
+@dataclass(frozen=True)
+class KnownDefect:
+    """A known upstream defect: versions of `variable` ingested from
+    `ingested_from` while POWER reported any of `api_versions`, for observation
+    dates from `obs_from` (to `obs_to`), are quarantined in the best-known views.
+    Raw rows are never changed."""
+
+    id: str
+    variable: str
+    api_versions: tuple[str, ...]
+    ingested_from: str
+    obs_from: str
+    obs_to: str | None = None
+    reason: str = ""
+
+    def sql(self) -> str:
+        versions = ", ".join(f"'{v}'" for v in self.api_versions)
+        cond = (
+            f"(variable = '{self.variable}' AND api_version IN ({versions}) "
+            f"AND ingested_at >= TIMESTAMPTZ '{self.ingested_from}' "
+            f"AND obs_date >= DATE '{self.obs_from}'"
+        )
+        if self.obs_to:
+            cond += f" AND obs_date <= DATE '{self.obs_to}'"
+        return cond + ")"
+
+
+def defects_from_config(data_cfg: dict) -> tuple[KnownDefect, ...]:
+    return tuple(
+        KnownDefect(
+            id=d["id"],
+            variable=d["variable"],
+            api_versions=tuple(d["api_versions"]),
+            ingested_from=str(d["ingested_from"]),
+            obs_from=str(d["obs_from"]),
+            obs_to=str(d["obs_to"]) if d.get("obs_to") else None,
+            reason=d.get("reason", ""),
+        )
+        for d in data_cfg.get("known_defects") or []
+    )
+
+
 class RawStore:
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, defects: Iterable[KnownDefect] = ()):
         self.root = Path(root)
+        self.defects = tuple(defects)
+
+    @classmethod
+    def from_config(cls, data_cfg: dict, data_root: Path) -> RawStore:
+        """The store under data_root with the configured known defects applied."""
+        return cls(data_root / data_cfg["storage"]["raw_power_dir"], defects_from_config(data_cfg))
 
     def year_dir(self, year: int) -> Path:
         return self.root / f"obs_year={year}"
@@ -58,9 +107,18 @@ class RawStore:
             return SCHEMA.empty_table().to_pandas()
         return pa.concat_tables(pq.read_table(f, schema=SCHEMA) for f in files).to_pandas()
 
-    def best_sql(self, years: Iterable[int] | None = None, asof: pd.Timestamp | None = None):
+    def best_sql(
+        self,
+        years: Iterable[int] | None = None,
+        asof: pd.Timestamp | None = None,
+        apply_defects: bool = True,
+    ):
         """SQL (DuckDB) selecting the latest version per key, optionally as known at
-        time `asof` (UTC). None if the store is empty. Use for whole-history queries."""
+        time `asof` (UTC). None if the store is empty. Use for whole-history queries.
+
+        With known defects applied, a quarantined version is used only if no good
+        version exists, and then its value is NULL (missing, never a wrong number).
+        Column `quarantined` names the defect, else NULL."""
         files = self.files(years)
         if not files:
             return None
@@ -68,18 +126,30 @@ class RawStore:
         where = ""
         if asof is not None:
             where = f"WHERE ingested_at <= TIMESTAMPTZ '{pd.Timestamp(asof).isoformat()}'"
+        defects = self.defects if apply_defects else ()
+        if defects:
+            flag = "CASE " + " ".join(f"WHEN {d.sql()} THEN '{d.id}'" for d in defects) + " END"
+        else:
+            flag = "CAST(NULL AS VARCHAR)"
         return f"""
-            SELECT * EXCLUDE (rn) FROM (
+            SELECT * EXCLUDE (rn, value), CASE WHEN quarantined IS NULL THEN value END AS value
+            FROM (
                 SELECT *, row_number() OVER (
-                    PARTITION BY cell_id, obs_date, variable ORDER BY ingested_at DESC
+                    PARTITION BY cell_id, obs_date, variable
+                    ORDER BY (quarantined IS NOT NULL), ingested_at DESC
                 ) AS rn
-                FROM read_parquet([{file_list}]) {where}
+                FROM (SELECT *, {flag} AS quarantined FROM read_parquet([{file_list}]) {where})
             ) WHERE rn = 1
         """
 
-    def best(self, years: Iterable[int] | None = None, asof: pd.Timestamp | None = None):
+    def best(
+        self,
+        years: Iterable[int] | None = None,
+        asof: pd.Timestamp | None = None,
+        apply_defects: bool = True,
+    ):
         """Latest version per key as a DataFrame, optionally as known at `asof`."""
-        sql = self.best_sql(years, asof)
+        sql = self.best_sql(years, asof, apply_defects)
         if sql is None:
             return SCHEMA.empty_table().to_pandas()
         with duckdb.connect() as con:
@@ -129,7 +199,9 @@ class RawStore:
     def _changed(self, new: pd.DataFrame, year: int) -> pd.DataFrame:
         """Rows of `new` (all in `year`) that are absent from, or differ from, the
         latest stored version."""
-        current = self.best([year])
+        # Compare with what was actually stored last, quarantined or not, so a
+        # defective version is not re-appended on every run.
+        current = self.best([year], apply_defects=False)
         if current.empty:
             return new
         current = current[KEY + ["value"]].rename(columns={"value": "old"})

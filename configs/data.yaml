@@ -122,3 +122,21 @@ gsod:
     max_retries: 4
     backoff_base_s: 2.0
     pause_between_requests_s: 0.2
+
+# Known upstream defects (docs/decisions/007). Raw rows are never changed; the
+# best-known views ignore the affected versions, falling back to the last good
+# version, else returning the value as missing. A rule keyed on API versions
+# stops applying by itself when POWER ships a fix under a NEW version; a silent
+# fix under the same version needs the rule lifted by hand (watch the daily
+# "known_defects_active" count).
+known_defects:
+  - id: power_v2.10.1_precip_x24
+    variable: PRECTOTCORR
+    api_versions: [v2.10.0, v2.10.1]   # first bad batch (21 Oct) still said v2.10.0
+    ingested_from: "2026-10-21T00:00:00+00:00"
+    obs_from: 2026-06-23
+    reason: >
+      From 2026-10-21 POWER API v2.10.1 serves precipitation for 2026-06-23
+      onward at ~24x its earlier values (69 % of revisions within 1 % of x24;
+      July mean 238 mm/day; max 2,700 mm/day). Not a clean factor (September
+      median x11.5), so not corrected by division.

@@ -107,8 +107,13 @@ def cmd_check_raw(args: argparse.Namespace) -> None:
     from heatwave.ingest.run import check_spine
 
     cfg, paths = _ingest_context()
+    from heatwave.ingest.raw_store import defects_from_config
+
     report = check_spine(
-        paths, date.fromisoformat(cfg["power"]["start"]), cfg["power"]["parameters"]
+        paths,
+        date.fromisoformat(cfg["power"]["start"]),
+        cfg["power"]["parameters"],
+        defects_from_config(cfg),
     )
     print(json.dumps(report, indent=2))
     if not report["complete"]:
@@ -191,7 +196,7 @@ def cmd_build_district_daily(args: argparse.Namespace) -> None:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     power = power_district_daily(
-        RawStore(paths.raw_power),
+        RawStore.from_config(cfg, paths.root),
         pd.read_parquet(ref / "district_grid_weights.parquet"),
         cfg["power"]["parameters"],
         cfg["geo"]["cellmax_min_share"],

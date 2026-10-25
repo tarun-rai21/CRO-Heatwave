@@ -25,7 +25,7 @@ from heatwave.ingest.power import (
     PowerSettings,
     parse_response,
 )
-from heatwave.ingest.raw_store import RawStore
+from heatwave.ingest.raw_store import RawStore, defects_from_config
 
 LATENCY_VARIABLE = "T2M_MAX"
 
@@ -89,7 +89,7 @@ def run_ingest(
             failed[cell.cell_id] = str(e)[:300]
             print(f"[{n}/{len(cells)}] {cell.cell_id} FAILED: {e}")
 
-    store = RawStore(paths.raw_power)
+    store = RawStore(paths.raw_power, defects_from_config(cfg))
     values = pd.concat([r.values for r in responses], ignore_index=True) if responses else None
     api_versions = sorted({r.api_version for r in responses})
     appended = 0
@@ -186,12 +186,12 @@ def _append_run_log(path: Path, summary: dict) -> None:
     log.to_parquet(path, index=False)
 
 
-def check_spine(paths: Paths, start: date, variables: list[str]) -> dict:
+def check_spine(paths: Paths, start: date, variables: list[str], defects=()) -> dict:
     """Completeness of the best-known raw data: every cell x variable must have a
     row for every date from `start` to that variable's last published date.
     Only `variables` are considered: retired ones (e.g. WD10M) stay in the raw
     store for audit but are not part of the current data set."""
-    store = RawStore(paths.raw_power)
+    store = RawStore(paths.raw_power, defects)
     sql = store.best_sql()
     if sql is None:
         raise RuntimeError("raw store is empty; run the backfill first")

@@ -8,10 +8,10 @@ Decisions and explanations: `docs/decisions/004-phase3-data-quality.md`.
 
 ## 1. NASA POWER completeness
 
-- Cells: 102; period 1981-01-01 to 2026-10-17
-- Values (best-known): 22,178,676 across 13 variables
+- Cells: 102; period 1981-01-01 to 2026-10-21
+- Values (best-known): 22,183,980 across 13 variables
 - Complete date spine for every cell and variable: **True**
-- Missing values: none
+- Missing values: {'PRECTOTCORR': 408}
 
 ## 2. Hard checks (physically impossible values)
 
@@ -28,7 +28,7 @@ Observed range per variable:
 | T2M_MIN | -3.94 | 36.56 |
 | T2M | 2.53 | 42.38 |
 | T2MDEW | -19.77 | 28.36 |
-| RH2M | 3.66 | 97.83 |
+| RH2M | 3.66 | 97.54 |
 | QV2M | 0.57 | 25.15 |
 | PRECTOTCORR | 0.0 | 288.24 |
 | WS10M | 0.38 | 13.35 |
@@ -45,8 +45,8 @@ Observed range per variable:
 - Spatial outliers: more than 5.0 C from the neighbours' median
   beyond the usual offset; variables T2M_MAX
 
-Flags: **30** (3 in March-June);
-reviewed 30, **unreviewed 0**.
+Flags: **26** (3 in March-June);
+reviewed 26, **unreviewed 0**.
 
 | check | variable | cell_id | obs_date | value | detail | reason |
 |---|---|---|---|---|---|---|
@@ -76,14 +76,58 @@ reviewed 30, **unreviewed 0**.
 | spatial | T2M_MAX | merra2_r228_c414 | 2023-01-25 | 25.57 | +5.2 C vs neighbours | Winter, single day, southern edge cell with few neighbours (Lalitpur, 1.3% weight): fog/cloud-band edge. Far from heatwave thresholds. |
 | spatial | T2M_MAX | merra2_r241_c413 | 2026-01-12 | 18.5 | +5.3 C vs neighbours | Foothill cell at 1,404 m (0.7% of Saharanpur) next to plains cells: terrain and winter inversions exceed the usual monthly offset. Negligible district weight. |
 | spatial | T2M_MAX | merra2_r241_c413 | 2026-01-16 | 21.45 | +5.3 C vs neighbours | Foothill cell at 1,404 m (0.7% of Saharanpur) next to plains cells: terrain and winter inversions exceed the usual monthly offset. Negligible district weight. |
-| spatial | T2M_MAX | merra2_r238_c411 | 2026-09-26 | 32.27 | +5.8 C vs neighbours | Rain-band edge: rainfall differs sharply from neighbours (0.3 vs 14.1 mm), so Tmax differs. Real convective/frontal weather. |
-| spatial | T2M_MAX | merra2_r241_c412 | 2026-09-26 | 28.84 | +5.1 C vs neighbours | Rain-band edge: rainfall differs sharply from neighbours (9.9 vs 43.3 mm), so Tmax differs. Real convective/frontal weather. |
-| spatial | T2M_MAX | merra2_r238_c411 | 2026-09-27 | 34.51 | +5.8 C vs neighbours | Day after the 26 Sep rain band: neighbours still cooled by heavy rain (14 mm the day before), this cell had stayed dry. Monsoon withdrawal; provisional (GEOS-IT) data. |
-| spatial | T2M_MAX | merra2_r240_c411 | 2026-09-27 | 35.28 | +5.1 C vs neighbours | Day after the 26 Sep rain band: neighbours still cooled by heavy rain the day before; this cell stayed dry. Monsoon withdrawal; provisional (GEOS-IT) data. |
 
 ## 4. Missing values by year
 
-No missing values in any variable or year.
+| year | T2M_MAX | T2M_MIN | T2M | T2MDEW | RH2M | QV2M | PRECTOTCORR | WS10M | U10M | V10M | PS | GWETTOP | GWETROOT |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1981 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1982 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1983 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1984 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1985 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1986 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1987 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1988 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1989 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1990 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1991 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1992 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1993 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1994 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1995 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1996 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1997 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1998 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 1999 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2000 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2001 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2002 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2003 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2004 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2005 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2006 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2007 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2008 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2009 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2010 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2011 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2012 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2013 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2014 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2015 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2016 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2017 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2018 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2019 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2020 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2021 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2022 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2023 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2024 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2025 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+| 2026 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0136 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 | 0.0 |
+
 
 ## 5. IMD gridded Tmax over UP (box [77.0, 23.5, 84.5, 30.5])
 
