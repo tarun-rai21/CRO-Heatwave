@@ -2,7 +2,7 @@
 
 The single guide for this project. Each section records decisions we have agreed on and why. Change a decision only by editing this file and adding an entry to the change log at the bottom.
 
-**Status:** Phases 0–5 complete (20 Oct 2026). Next: Phase 6 (§6.2). Goes live 1 March 2027 after shadow mode from mid-December.
+**Status:** Phases 0–6 complete (25 Oct 2026). Next: Phase 7 (§6.2). Goes live 1 March 2027 after shadow mode from mid-December.
 
 ---
 
@@ -515,3 +515,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-10-20 | 3.7 | Gate G1 passed with a recorded exception after the drift term; the per-station year check is now primary |
 | 2026-10-20 | 6.1, 6.2, 4.4, 3.7 | Ahead of schedule: LightGBM (M3) built before go-live in Phase 7; G3 picks the production model; shadow mode Dec–Feb; plan dates revised; live season March–July |
 | 2026-10-25 | 2.3 | Known-defect quarantine rule added after POWER's ×24 rainfall revision (decision record 007) |
+| 2026-10-25 | 3.5, 3.7, 4.4 | Phase 6: regions = UP's four economic regions; M1 adds a season band; M2 is one logistic model per lead; G2 passed after its M0 check was redesigned to an in-sample bug check (decision record 008) |

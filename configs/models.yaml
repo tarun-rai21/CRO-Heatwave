@@ -1,0 +1,27 @@
+# Model and evaluation settings (reference.md §3, §4.4; Phase 6-7).
+
+baselines:
+  m0_window:                       # climatology of the 10-day window target
+    smooth_days: 15                # +/- days around the issue date's calendar day
+  m1:                              # persistence lookup
+    anomaly_bins: 8                # quantile bins of the Tmax anomaly at t (training rows)
+    season_bands:                  # calendar-month bands of the valid / issue date
+      early: [2, 3, 4]
+      peak: [5, 6]
+      late: [7, 8]
+    shrinkage: 20                  # pseudo-count pulling each cell toward its mean climatology
+  m2:                              # logistic regression, one model per lead
+    features: [doy_sin, doy_cos, tmax_anom, tmax_anom_mean7, gwetroot_anom]
+    logit_clim: true               # plus logit of the climatological frequency
+    clim_clip: [0.001, 0.999]
+    C: 1.0                         # inverse L2 strength on standardised features
+    max_iter: 500
+
+evaluation:
+  bootstrap_resamples: 2000        # year-block bootstrap (resample whole validation years)
+  bootstrap_seed: 2026
+  ci: 0.95
+  reliability_bins: 10
+  # Gate G2 (reference.md §3.7): baselines give sensible skill-by-lead curves.
+  g2:
+    min_bss_lead1: 0.0             # M1 and M2: lead-1 BSS interval must lie above this

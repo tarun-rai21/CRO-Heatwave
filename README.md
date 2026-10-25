@@ -2,7 +2,7 @@
 
 Probabilistic heatwave forecasts for all 75 districts of Uttar Pradesh, for each of the next 10 days. Built for UP government weather officials: forecasts are produced daily, published with alert tiers, and verified against what actually happened.
 
-**Status:** Phases 0–5 complete (setup, geography, ingestion, data quality, labels, features). Phase 6 (validation harness and baselines) next. V1.0 goes live on 1 March 2027.
+**Status:** Phases 0–6 complete (setup, geography, ingestion, data quality, labels, features, validation harness and baselines). Phase 7 (LightGBM, calibration, tiers) next. V1.0 goes live on 1 March 2027.
 
 Everything about the design (target, data, labels, validation, models, architecture, phases) is in **[`reference.md`](reference.md)**. Read that first.
 
@@ -29,7 +29,9 @@ uv run heatwave show-problem
 | `configs/quality.yaml` | Data-quality rules and reviewed flags |
 | `configs/labels.yaml` | Label build, sensitivity labels and label QA settings |
 | `configs/features.yaml` | Feature windows, caps and climatology settings |
-| `reports/` | Generated reports: `data_qa.md`, `label_source_comparison.md`, `label_qa.md` |
+| `configs/models.yaml` | Baseline and evaluation settings |
+| `configs/regions.yaml` | UP regions for breakdowns |
+| `reports/` | Generated reports: `data_qa.md`, `label_source_comparison.md`, `label_qa.md`, `baselines.md` |
 | `src/heatwave/` | Package; every pipeline step is a `heatwave` CLI command |
 | `tests/` | `pytest` tests, run in CI on every push (`tests/data/` skip when local data is absent) |
 | `docs/decisions/` | Short notes recording decisions and verifications |

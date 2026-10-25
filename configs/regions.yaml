@@ -1,0 +1,14 @@
+# Regions for by-region breakdowns (reference.md §3.5). UP's four standard
+# economic regions; 75 districts. Confirmed by the owner (docs/decisions/008).
+regions:
+  bundelkhand: [jhansi, lalitpur, jalaun, hamirpur, mahoba, banda, chitrakoot]
+  central: [lucknow, unnao, rae_bareli, sitapur, hardoi, lakhimpur_kheri, kanpur_nagar,
+            kanpur_dehat, fatehpur, barabanki]
+  eastern: [prayagraj, kaushambi, pratapgarh, varanasi, chandauli, ghazipur, jaunpur, bhadohi,
+            mirzapur, sonbhadra, azamgarh, mau, ballia, gorakhpur, deoria, kushinagar,
+            maharajganj, basti, sant_kabir_nagar, siddharth_nagar, gonda, bahraich, shravasti,
+            balrampur, ayodhya, ambedkar_nagar, sultanpur, amethi]
+  western: [agra, firozabad, mainpuri, mathura, aligarh, hathras, etah, kasganj, meerut, baghpat,
+            ghaziabad, gautam_buddha_nagar, bulandshahr, hapur, saharanpur, muzaffarnagar, shamli,
+            moradabad, bijnor, rampur, amroha, sambhal, bareilly, budaun, pilibhit,
+            shahjahanpur, etawah, auraiya, farrukhabad, kannauj]

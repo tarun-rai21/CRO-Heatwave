@@ -13,6 +13,7 @@ Commands:
     uv run heatwave ingest-gsod        NOAA station maxima, development years
     uv run heatwave build-labels       labels, episodes, label reports
     uv run heatwave build-features     feature tables per block, docs/features.md
+    uv run heatwave evaluate-baselines walk-forward M0-M2 -> reports/baselines.md
     uv run heatwave hub-push-all       upload reference/raw/runs to Hugging Face
     uv run heatwave hub-pull           download them
 """
@@ -185,6 +186,35 @@ def cmd_build_features(args: argparse.Namespace) -> None:
     print(json.dumps(manifest, indent=2))
 
 
+def cmd_evaluate_baselines(args: argparse.Namespace) -> None:
+    from heatwave.models.baselines import M2Lead
+    from heatwave.validation import report, walk_forward
+
+    cfg, paths = _ingest_context()
+    problem, model_cfg = load_problem(), read_yaml("models.yaml")
+    region_map = walk_forward.regions(REPO_ROOT / "configs" / "regions.yaml")
+    oof_dir = paths.root / "oof"
+    oof_dir.mkdir(parents=True, exist_ok=True)
+    out = {}
+    for target in ("lead", "window"):
+        out[target] = walk_forward.run(
+            problem, model_cfg, paths.root, region_map, target, ["M0", "M1", "M2"]
+        )
+        out[target].to_parquet(oof_dir / f"baselines_{target}.parquet", index=False)
+    labels = pd.read_parquet(
+        paths.root / "labels" / "labels_daily.parquet",
+        columns=["district_id", "obs_date", "is_heatwave"],
+    )
+    train, _ = walk_forward.fold_tables(
+        problem, problem.validation.folds[-1], paths.root, labels, "lead", walk_forward.COLUMNS
+    )
+    coefs = M2Lead(model_cfg).fit(train).coefficients()
+    summary = report.build(
+        out["lead"], out["window"], model_cfg, REPO_ROOT / "reports" / "baselines.md", coefs
+    )
+    print(json.dumps(summary, indent=2, default=str))
+
+
 def cmd_build_district_daily(args: argparse.Namespace) -> None:
     from heatwave.geo.aggregate import imd_district_daily, power_district_daily
     from heatwave.ingest.imd import ImdSettings
@@ -315,6 +345,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser(
         "build-features", help="feature tables per fold + development, climatologies, dictionary"
     ).set_defaults(func=cmd_build_features)
+    sub.add_parser(
+        "evaluate-baselines", help="walk-forward M0-M2, OOF predictions, reports/baselines.md"
+    ).set_defaults(func=cmd_evaluate_baselines)
     sub.add_parser("qa-report", help="full-history data QA -> reports/data_qa.md").set_defaults(
         func=cmd_qa_report
     )
