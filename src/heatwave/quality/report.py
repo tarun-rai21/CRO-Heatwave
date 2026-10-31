@@ -32,7 +32,7 @@ def build_report(data_cfg: dict, quality_cfg: dict, paths: Paths, out: Path) -> 
         raise ValueError("configs/quality.yaml ranges must cover exactly the POWER parameters")
 
     start = date.fromisoformat(data_cfg["power"]["start"])
-    defects = defects_from_config(data_cfg)
+    defects = defects_from_config(data_cfg, paths.runs_log)
     spine = check_spine(paths, start, data_cfg["power"]["parameters"], defects)
     wide = checks.load_wide(RawStore(paths.raw_power, defects), variables)
     cells = pd.read_parquet(paths.grid_cells)
@@ -134,7 +134,7 @@ def validate_recent(data_cfg: dict, quality_cfg: dict, paths: Paths, today: date
     observation year, every cell present on the newest day, and latency."""
     variables = list(quality_cfg["hard"]["ranges"])
     years = sorted({today.year, (pd.Timestamp(today) - pd.Timedelta(days=120)).year})
-    defects = defects_from_config(data_cfg)
+    defects = defects_from_config(data_cfg, paths.runs_log)
     store = RawStore(paths.raw_power, defects)
     wide = checks.load_wide(store, variables, years)
     cells = set(pd.read_parquet(paths.grid_cells)["cell_id"])

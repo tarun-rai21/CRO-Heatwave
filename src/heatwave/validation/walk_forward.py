@@ -13,6 +13,8 @@ years start, and the fold's climatology was fitted on training years only.
 
 from __future__ import annotations
 
+import gc
+import json
 from pathlib import Path
 
 import numpy as np
@@ -33,6 +35,21 @@ COLUMNS = [
     "doy_cos",
     "days_since_hw",
 ]
+
+
+def make_model(name: str, target: str, model_cfg: dict, problem: Problem):
+    """Baselines by name; 'M3' is LightGBM with defaults; 'M3<suffix>' variants are
+    built by the caller and registered in VARIANTS."""
+    if name in VARIANTS:
+        return VARIANTS[name](target)
+    if name == "M3":
+        from heatwave.models.gbm import M3
+
+        return M3(model_cfg, target, problem.validation.inner_block_seasons)
+    return baselines.make(name, target, model_cfg)
+
+
+VARIANTS: dict = {}  # name -> callable(target) returning an unfitted model
 
 
 def regions(path: Path) -> dict[str, str]:
@@ -75,20 +92,43 @@ def run(
     target: str,
     models: list[str],
     extra_columns: list[str] = (),
+    checkpoint: Path | None = None,
 ) -> pd.DataFrame:
+    """OOF predictions. With `checkpoint` (a directory), each finished fold is saved
+    there and reused on the next run, so an interrupted run resumes."""
     labels = pd.read_parquet(
         root / "labels" / "labels_daily.parquet", columns=["district_id", "obs_date", "is_heatwave"]
     )
-    columns = [*COLUMNS, *extra_columns]
-    parts, checks = [], []
+    # LightGBM uses every feature; the baselines need only a few columns.
+    columns = None if any(m.startswith("M3") for m in models) else [*COLUMNS, *extra_columns]
+    parts, checks, fits = [], [], []
     for fold in problem.validation.folds:
+        saved = None if checkpoint is None else checkpoint / f"{target}_fold{fold.fold}.parquet"
+        if saved is not None and saved.exists():
+            part = pd.read_parquet(saved)
+            meta = json.loads(saved.with_suffix(".json").read_text())
+            parts.append(part)
+            checks.append(meta["check"])
+            fits.extend(meta["fits"])
+            print(f"fold {fold.fold} ({target}): reused {saved.name}")
+            continue
+        fold_fits = []
         train, validate = fold_tables(problem, fold, root, labels, target, columns)
         out = validate[["district_id", "issue_date", "y"]].copy()
         if target == "lead":
             out["valid_date"], out["lead"] = validate["valid_date"], validate["lead"]
         for name in models:
-            model = baselines.make(name, target, model_cfg).fit(train)
+            model = make_model(name, target, model_cfg, problem).fit(train)
             out[f"p_{name}"] = np.clip(model.predict(validate), 0, 1)
+            if hasattr(model, "best_rounds"):
+                fold_fits.append(
+                    {
+                        "fold": fold.fold,
+                        "model": name,
+                        "rounds": model.best_rounds,
+                        "inner_logloss": model.inner_logloss,
+                    }
+                )
         # Bug check for M0: in its own training rows (evaluation season) its mean
         # forecast must equal the observed rate.
         if target == "lead":
@@ -111,10 +151,19 @@ def run(
         out["fold"] = fold.fold
         out["days_since_hw"] = validate["days_since_hw"].to_numpy()
         parts.append(out)
+        fits.extend(fold_fits)
         print(
             f"fold {fold.fold} ({target}): train {len(train):,} rows, "
             f"validate {len(validate):,} rows"
         )
+        if saved is not None:
+            saved.parent.mkdir(parents=True, exist_ok=True)
+            out.to_parquet(saved, index=False)
+            saved.with_suffix(".json").write_text(
+                json.dumps({"check": checks[-1], "fits": fold_fits})
+            )
+        del train, validate, model
+        gc.collect()
     oof = pd.concat(parts, ignore_index=True)
     date = oof["valid_date"] if target == "lead" else oof["issue_date"]
     oof["year"], oof["month"] = date.dt.year, date.dt.month
@@ -122,4 +171,5 @@ def run(
     # Onset case: no heatwave day in the 3 days up to the as-of date t.
     oof["onset"] = oof["days_since_hw"] >= problem.onset_lookback_days
     oof.attrs["fold_checks"] = checks  # list of dicts (parquet stores attrs as JSON)
+    oof.attrs["fits"] = fits
     return oof

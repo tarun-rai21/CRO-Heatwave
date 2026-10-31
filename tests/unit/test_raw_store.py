@@ -117,7 +117,7 @@ def test_new_variable_is_added_without_rewriting_existing_ones(store):
 
 # --- known defects (quarantine) --------------------------------------------------
 
-from heatwave.ingest.raw_store import KnownDefect  # noqa: E402
+from heatwave.ingest.raw_store import KnownDefect, defects_from_config  # noqa: E402
 
 T_BAD = pd.Timestamp("2026-10-21 08:46", tz="UTC")
 RULE = KnownDefect(
@@ -171,3 +171,71 @@ def test_append_does_not_re_append_a_quarantined_version(tmp_path):
     bad = rows(("c1", date(2026, 10, 19), "PRECTOTCORR", 240.0))
     store.append(bad, "bad1", T_BAD, "v2.10.1")
     assert store.append(bad, "bad2", T_BAD + pd.Timedelta(days=1), "v2.10.1") == 0
+
+
+def test_versions_after_the_fix_are_used_again(tmp_path):
+    closed = KnownDefect(
+        id="x24",
+        variable="PRECTOTCORR",
+        api_versions=("v2.10.1",),
+        ingested_from="2026-10-21T00:00:00+00:00",
+        obs_from="2026-06-23",
+        ingested_to="2026-10-27T00:00:00+00:00",
+    )
+    store = RawStore(tmp_path, [closed])
+    key = ("c1", date(2026, 10, 19), "PRECTOTCORR")
+    store.append(rows((*key, 240.0)), "bad", T_BAD, "v2.10.1")
+    assert pd.isna(best_value(store, *key))  # only the bad version exists: missing
+    store.append(rows((*key, 10.0)), "fixed", pd.Timestamp("2026-10-27 09:13", tz="UTC"), "v2.10.1")
+    assert best_value(store, *key) == 10.0  # the corrected version, same API label
+
+
+def test_unchanged_value_refetched_after_the_fix_is_used_again(tmp_path):
+    # 0 mm x 24 = 0 mm: the fixed source returns the same value, so nothing new is
+    # stored; the run log shows the date was downloaded again after the fix.
+    def defect(refetched=()):
+        return KnownDefect(
+            id="x24",
+            variable="PRECTOTCORR",
+            api_versions=("v2.10.1",),
+            ingested_from="2026-10-21T00:00:00+00:00",
+            obs_from="2026-06-23",
+            ingested_to="2026-10-27T00:00:00+00:00",
+            refetched=refetched,
+        )
+
+    key = ("c1", date(2026, 10, 19), "PRECTOTCORR")
+    RawStore(tmp_path).append(rows((*key, 0.0)), "bad", T_BAD, "v2.10.1")
+    assert pd.isna(best_value(RawStore(tmp_path, [defect()]), *key))
+    assert best_value(RawStore(tmp_path, [defect((("2026-06-29", "2026-10-27"),))]), *key) == 0.0
+    # A date outside every re-fetched window stays quarantined.
+    assert pd.isna(best_value(RawStore(tmp_path, [defect((("2026-10-20", "2026-10-27"),))]), *key))
+
+
+def test_refetched_windows_come_from_ok_runs_after_the_fix(tmp_path):
+    cfg = {
+        "known_defects": [
+            {
+                "id": "x24",
+                "variable": "PRECTOTCORR",
+                "api_versions": ["v2.10.1"],
+                "ingested_from": "2026-10-21T00:00:00+00:00",
+                "ingested_to": "2026-10-27T00:00:00+00:00",
+                "obs_from": "2026-06-23",
+            }
+        ]
+    }
+    runs = pd.DataFrame(
+        {
+            "status": ["ok", "failed", "ok"],
+            "started_at": pd.to_datetime(
+                ["2026-10-24 08:00", "2026-10-27 09:00", "2026-10-28 09:00"], utc=True
+            ),
+            "window_start": pd.to_datetime(["2026-06-26", "2026-06-29", "2026-06-30"]),
+            "window_end": pd.to_datetime(["2026-10-24", "2026-10-27", "2026-10-28"]),
+        }
+    )
+    runs.to_parquet(tmp_path / "runs.parquet")
+    (d,) = defects_from_config(cfg, tmp_path / "runs.parquet")
+    assert defects_from_config(cfg)[0].refetched == ()  # no run log: stays quarantined
+    assert d.refetched == (("2026-06-30", "2026-10-28"),)

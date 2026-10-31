@@ -43,3 +43,17 @@ Quarantine, don't correct. The ratio isn't a clean ×24, so dividing would intro
 - **Development data (1981–2020) is unaffected.** Labels use Tmax only. Rainfall features for June 2026 onward come from good versions or are missing.
 - **Before the live season** (decide by mid-December if POWER hasn't fixed it): choose a rainfall fallback for new days, either IMD's real-time rainfall grid or rainfall features left missing. LightGBM uses missing values natively; the logistic model does not use rainfall.
 - The 21 October revisions give the first real **provisional-vs-final** pairs for the skew audit (reference.md §5.6).
+
+## Update, 31 October 2026: closed
+
+POWER fixed the rainfall without saying so, still under the `v2.10.1` label. The daily run of **27 October** re-sent corrected values: the median ratio to the pre-bug values was 1.00. The rule is now closed (`ingested_to: 2026-10-27`). Versions ingested from then on are used as normal.
+
+One case needed a code change. For **300 values** (18–21 October, before the bug, which arrived first in the bad batches), the true rainfall was **0 mm**. Zero times 24 is still zero, so the fixed source returned the same value. The store writes only changed values, so no "post-fix" version was ever stored, and the rule kept those zeros quarantined.
+
+- **Rule:** for a closed defect, a quarantined version that is still the latest **inside an observation range that a successful run re-downloaded after the fix** was confirmed unchanged by the fixed source, so it is used again.
+- **Where the ranges come from:** the ingest run log (`window_start`–`window_end` of `ok` runs started on or after `ingested_to`). Every store built from config passes the run log in: ingest, `check-raw`, `qa-report`, `validate`.
+- **Dates outside those ranges stay quarantined.** For example, 23–28 June wasn't re-downloaded after 27 October; it already falls back to its good pre-bug version.
+
+**After the change:** the 2026 rainfall best view has 0 quarantined and 0 missing values, with a highest value of 265.74 mm. `validate` passes with `known_defects_active: {}`. Two unit tests were added: an unchanged value re-downloaded after the fix is used again (and stays quarantined outside the range), and the ranges come only from `ok` runs after the fix.
+
+**Consequence:** the "rainfall fallback before the live season" item above is no longer needed. The rule stays in the config as the audit record.

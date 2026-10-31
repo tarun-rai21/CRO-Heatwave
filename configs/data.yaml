@@ -134,6 +134,9 @@ known_defects:
     variable: PRECTOTCORR
     api_versions: [v2.10.0, v2.10.1]   # first bad batch (21 Oct) still said v2.10.0
     ingested_from: "2026-10-21T00:00:00+00:00"
+    # POWER re-sent corrected rainfall on 2026-10-27 under the same v2.10.1 label
+    # (median ratio to the pre-bug values 1.00): versions from then on are used.
+    ingested_to: "2026-10-27T00:00:00+00:00"
     obs_from: 2026-06-23
     reason: >
       From 2026-10-21 POWER API v2.10.1 serves precipitation for 2026-06-23

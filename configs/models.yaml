@@ -17,6 +17,41 @@ baselines:
     C: 1.0                         # inverse L2 strength on standardised features
     max_iter: 500
 
+m3:                                # LightGBM (reference.md §4.5); regularised defaults
+  params:
+    objective: binary
+    learning_rate: 0.05
+    num_leaves: 31
+    min_child_samples: 200           # rows are spatial near-duplicates: big leaves
+    feature_fraction: 0.7
+    bagging_fraction: 0.5            # rows are highly redundant across districts
+    bagging_freq: 1
+    lambda_l2: 1.0
+    max_bin: 63
+    verbose: -1
+    deterministic: true
+    force_row_wise: true
+    num_threads: 8
+  max_rounds: 3000
+  early_stopping_rounds: 100         # on the fold's inner block (last training seasons)
+  seeds: [11, 12, 13]                # final results reported over these seeds
+  # Monotone constraints (tested in Phase 7, off unless they help):
+  # probability non-decreasing in heat, non-increasing in soil wetness.
+  monotone:
+    increasing: [tmax_anom, tmax_anom_mean3, tmax_anom_mean7, tmax_anom_mean14, hot_days7,
+                 hot_days14, consec_hot_days, hw_today, clim_hw_freq_valid, clim_hw_freq_t]
+    decreasing: [gwettop_anom, gwetroot_anom]
+  use_monotone: false
+  tuning:                            # Optuna, <= 40 trials, objective: inner-block log loss
+    trials: 40
+    seed: 2026
+    space:
+      learning_rate: [0.02, 0.08]
+      num_leaves: [7, 31]
+      min_child_samples: [200, 2000]
+      feature_fraction: [0.4, 0.9]
+      lambda_l2: [0.1, 30.0]
+
 evaluation:
   bootstrap_resamples: 2000        # year-block bootstrap (resample whole validation years)
   bootstrap_seed: 2026

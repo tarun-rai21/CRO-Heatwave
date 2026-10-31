@@ -114,7 +114,7 @@ def cmd_check_raw(args: argparse.Namespace) -> None:
         paths,
         date.fromisoformat(cfg["power"]["start"]),
         cfg["power"]["parameters"],
-        defects_from_config(cfg),
+        defects_from_config(cfg, paths.runs_log),
     )
     print(json.dumps(report, indent=2))
     if not report["complete"]:

@@ -89,7 +89,7 @@ def run_ingest(
             failed[cell.cell_id] = str(e)[:300]
             print(f"[{n}/{len(cells)}] {cell.cell_id} FAILED: {e}")
 
-    store = RawStore(paths.raw_power, defects_from_config(cfg))
+    store = RawStore(paths.raw_power, defects_from_config(cfg, paths.runs_log))
     values = pd.concat([r.values for r in responses], ignore_index=True) if responses else None
     api_versions = sorted({r.api_version for r in responses})
     appended = 0

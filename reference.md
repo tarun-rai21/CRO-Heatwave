@@ -516,3 +516,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-10-20 | 6.1, 6.2, 4.4, 3.7 | Ahead of schedule: LightGBM (M3) built before go-live in Phase 7; G3 picks the production model; shadow mode Dec–Feb; plan dates revised; live season March–July |
 | 2026-10-25 | 2.3 | Known-defect quarantine rule added after POWER's ×24 rainfall revision (decision record 007) |
 | 2026-10-25 | 3.5, 3.7, 4.4 | Phase 6: regions = UP's four economic regions; M1 adds a season band; M2 is one logistic model per lead; G2 passed after its M0 check was redesigned to an in-sample bug check (decision record 008) |
+| 2026-10-31 | 2.3 | Rainfall quarantine closed after POWER's silent fix of 27 Oct; a closed defect's unchanged values re-downloaded after the fix are used again (decision record 007) |

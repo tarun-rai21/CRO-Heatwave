@@ -41,9 +41,14 @@ SCHEMA = pa.schema(
 @dataclass(frozen=True)
 class KnownDefect:
     """A known upstream defect: versions of `variable` ingested from
-    `ingested_from` while POWER reported any of `api_versions`, for observation
-    dates from `obs_from` (to `obs_to`), are quarantined in the best-known views.
-    Raw rows are never changed."""
+    `ingested_from` (until `ingested_to`, exclusive, once the source is fixed) while
+    POWER reported any of `api_versions`, for observation dates from `obs_from`
+    (to `obs_to`), are quarantined in the best-known views. Raw rows are never changed.
+
+    `refetched`: observation-date ranges that runs after the fix downloaded again.
+    The store writes only changed values, so a defective version still latest
+    inside these ranges was returned unchanged by the fixed source (e.g. 0 mm
+    rain, where x24 changes nothing) and is used again."""
 
     id: str
     variable: str
@@ -52,6 +57,8 @@ class KnownDefect:
     obs_from: str
     obs_to: str | None = None
     reason: str = ""
+    ingested_to: str | None = None
+    refetched: tuple[tuple[str, str], ...] = ()
 
     def sql(self) -> str:
         versions = ", ".join(f"'{v}'" for v in self.api_versions)
@@ -60,12 +67,29 @@ class KnownDefect:
             f"AND ingested_at >= TIMESTAMPTZ '{self.ingested_from}' "
             f"AND obs_date >= DATE '{self.obs_from}'"
         )
+        if self.ingested_to:
+            cond += f" AND ingested_at < TIMESTAMPTZ '{self.ingested_to}'"
         if self.obs_to:
             cond += f" AND obs_date <= DATE '{self.obs_to}'"
+        for start, end in self.refetched:
+            cond += f" AND NOT obs_date BETWEEN DATE '{start}' AND DATE '{end}'"
         return cond + ")"
 
 
-def defects_from_config(data_cfg: dict) -> tuple[KnownDefect, ...]:
+def defects_from_config(data_cfg: dict, runs_log: Path | None = None) -> tuple[KnownDefect, ...]:
+    """Defects from config; with the ingest run log, closed defects also get the
+    observation dates that successful runs after the fix downloaded again."""
+    runs = pd.read_parquet(runs_log) if runs_log is not None and runs_log.exists() else None
+
+    def refetched(ingested_to) -> tuple[tuple[str, str], ...]:
+        if not ingested_to or runs is None or runs.empty:
+            return ()
+        after = runs[(runs["status"] == "ok") & (runs["started_at"] >= pd.Timestamp(ingested_to))]
+        return tuple(
+            (str(pd.Timestamp(a).date()), str(pd.Timestamp(b).date()))
+            for a, b in after[["window_start", "window_end"]].itertuples(index=False)
+        )
+
     return tuple(
         KnownDefect(
             id=d["id"],
@@ -75,6 +99,8 @@ def defects_from_config(data_cfg: dict) -> tuple[KnownDefect, ...]:
             obs_from=str(d["obs_from"]),
             obs_to=str(d["obs_to"]) if d.get("obs_to") else None,
             reason=d.get("reason", ""),
+            ingested_to=str(d["ingested_to"]) if d.get("ingested_to") else None,
+            refetched=refetched(d.get("ingested_to")),
         )
         for d in data_cfg.get("known_defects") or []
     )
@@ -88,7 +114,10 @@ class RawStore:
     @classmethod
     def from_config(cls, data_cfg: dict, data_root: Path) -> RawStore:
         """The store under data_root with the configured known defects applied."""
-        return cls(data_root / data_cfg["storage"]["raw_power_dir"], defects_from_config(data_cfg))
+        s = data_cfg["storage"]
+        return cls(
+            data_root / s["raw_power_dir"], defects_from_config(data_cfg, data_root / s["runs_log"])
+        )
 
     def year_dir(self, year: int) -> Path:
         return self.root / f"obs_year={year}"
