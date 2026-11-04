@@ -14,8 +14,8 @@ Commands:
     uv run heatwave build-labels       labels, episodes, label reports
     uv run heatwave build-features     feature tables per block, docs/features.md
     uv run heatwave evaluate-baselines walk-forward M0-M2 -> reports/baselines.md
-    uv run heatwave hub-push-all       upload reference/raw/runs to Hugging Face
-    uv run heatwave hub-pull           download them
+    uv run heatwave hub-push-all       upload reference/raw/runs/labels/features/models to HF
+    uv run heatwave hub-pull [--only]  download them (or only some top-level folders)
 """
 
 from __future__ import annotations
@@ -23,6 +23,7 @@ from __future__ import annotations
 import argparse
 import json
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 
@@ -64,6 +65,26 @@ def cmd_build_geo(args: argparse.Namespace) -> None:
     from heatwave.geo.weights import build_geo  # geo stack is slow to import
 
     print(json.dumps(build_geo(read_yaml("data.yaml"), REPO_ROOT), indent=2))
+
+
+def _code_version() -> str | None:
+    """The git commit of this checkout, recorded with results."""
+    import subprocess
+
+    try:
+        sha = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=no"],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return sha + ("+uncommitted" if dirty else "")
 
 
 def _ingest_context():
@@ -130,11 +151,11 @@ def cmd_hub_push_all(args: argparse.Namespace) -> None:
         print(f"merged {merged} run-log rows written remotely since the last pull")
     files = sorted(
         f
-        for sub in ("reference", "raw", "runs", "labels")
+        for sub in ("reference", "raw", "runs", "labels", "features", "models")
         for f in (paths.root / sub).rglob("*")
         if f.is_file()
     )
-    n = hub.push(cfg, paths.root, files, "sync reference, raw and runs")
+    n = hub.push(cfg, paths.root, files, "sync reference, raw, runs, labels, features, models")
     print(f"uploaded {n} files")
 
 
@@ -213,6 +234,60 @@ def cmd_evaluate_baselines(args: argparse.Namespace) -> None:
         out["lead"], out["window"], model_cfg, REPO_ROOT / "reports" / "baselines.md", coefs
     )
     print(json.dumps(summary, indent=2, default=str))
+
+
+def cmd_tune_m3(args: argparse.Namespace) -> None:
+    from heatwave.validation import tuning
+
+    cfg, paths = _ingest_context()
+    problem, model_cfg = load_problem(), read_yaml("models.yaml")
+    bins = paths.root / "cache" / "tuning" / args.target  # rebuilt where needed, not synced
+    models = paths.root / "models"
+    models.mkdir(parents=True, exist_ok=True)
+    study = models / f"m3_tuning_{args.target}_study.db"
+    result = models / f"m3_tuning_{args.target}.json"
+    push = None
+    if args.push:
+        from heatwave import hub
+
+        def push():
+            hub.push(cfg, paths.root, [study, result], f"M3 tuning ({args.target}): study")
+
+    out = tuning.tune(
+        problem,
+        model_cfg,
+        paths.root,
+        args.target,
+        bins,
+        study,
+        tuning.runtime(args.device, args.threads),
+        push,
+    )
+    out["code_version"] = _code_version()
+    result.write_text(json.dumps(out, indent=2))
+    if push:
+        push()
+    print(json.dumps(out, indent=2))
+
+
+def cmd_bench_m3(args: argparse.Namespace) -> None:
+    from heatwave.validation import tuning
+
+    _, paths = _ingest_context()
+    problem, model_cfg = load_problem(), read_yaml("models.yaml")
+    setups = {d: tuning.runtime(d, args.threads) for d in args.devices}
+    out = tuning.bench(
+        problem,
+        model_cfg,
+        paths.root,
+        args.target,
+        paths.root / "cache" / "tuning" / args.target,
+        args.fold,
+        setups,
+    )
+    if args.out:
+        Path(args.out).write_text(json.dumps(out, indent=2))
+    print(json.dumps(out, indent=2))
 
 
 def cmd_build_district_daily(args: argparse.Namespace) -> None:
@@ -308,7 +383,8 @@ def cmd_hub_pull(args: argparse.Namespace) -> None:
     from heatwave import hub
 
     cfg, paths = _ingest_context()
-    hub.pull(cfg, paths.root, ["reference/*", "raw/**", "runs/*", "labels/*"])
+    parts = args.only or ["reference", "raw", "runs", "labels", "features", "models"]
+    hub.pull(cfg, paths.root, [f"{p}/**" for p in parts])
     print(f"pulled into {paths.root}")
 
 
@@ -354,15 +430,28 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("validate", help="daily gate: hard checks, completeness, latency").set_defaults(
         func=cmd_validate
     )
+    tune = sub.add_parser("tune-m3", help="Optuna tuning of LightGBM on inner blocks (resumable)")
+    tune.add_argument("--target", choices=["lead", "window"], default="lead")
+    tune.add_argument("--device", choices=["cpu", "gpu"], default="cpu")
+    tune.add_argument("--threads", type=int, default=None, help="default: models.yaml")
+    tune.add_argument("--push", action="store_true", help="upload the study to HF after each trial")
+    tune.set_defaults(func=cmd_tune_m3)
+    bench = sub.add_parser("bench-m3", help="time default LightGBM on one fold per device")
+    bench.add_argument("--target", choices=["lead", "window"], default="lead")
+    bench.add_argument("--fold", type=int, default=5)
+    bench.add_argument("--devices", nargs="+", choices=["cpu", "gpu"], default=["cpu", "gpu"])
+    bench.add_argument("--threads", type=int, default=None)
+    bench.add_argument("--out", help="also write the results to this JSON file")
+    bench.set_defaults(func=cmd_bench_m3)
     imd = sub.add_parser("ingest-imd", help="download IMD 1-degree gridded Tmax (resumable)")
     imd.add_argument("--last-year", help="last year to download (default: last full year)")
     imd.set_defaults(func=cmd_ingest_imd)
     sub.add_parser(
         "hub-push-all", help="upload reference, raw, runs and labels to Hugging Face"
     ).set_defaults(func=cmd_hub_push_all)
-    sub.add_parser(
-        "hub-pull", help="download reference, raw and runs from Hugging Face"
-    ).set_defaults(func=cmd_hub_pull)
+    pull = sub.add_parser("hub-pull", help="download the data mirror from Hugging Face")
+    pull.add_argument("--only", nargs="+", help="top-level folders, e.g. features labels models")
+    pull.set_defaults(func=cmd_hub_pull)
     args = parser.parse_args(argv)
     args.func(args)
 

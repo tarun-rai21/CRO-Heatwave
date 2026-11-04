@@ -45,7 +45,12 @@ def make_model(name: str, target: str, model_cfg: dict, problem: Problem):
     if name == "M3":
         from heatwave.models.gbm import M3
 
-        return M3(model_cfg, target, problem.validation.inner_block_seasons)
+        return M3(
+            model_cfg,
+            target,
+            problem.validation.inner_block_seasons,
+            eval_season=problem.evaluation_season,
+        )
     return baselines.make(name, target, model_cfg)
 
 

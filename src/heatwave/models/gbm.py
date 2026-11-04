@@ -11,9 +11,10 @@ base rate alone.
 
 Early stopping uses the fold's INNER block: the last `inner_seasons` training
 seasons are held out from the first fit to find the number of rounds; the model is
-then refitted on all training seasons with that number. The fold's validation
-years are never seen. No class weighting or resampling (probabilities are the
-product).
+then refitted on all training seasons with that number. With `eval_season`, only
+inner rows in the evaluation season (March-July) score the early stopping, as the
+tuning objective does (reference.md §4.6). The fold's validation years are never
+seen. No class weighting or resampling (probabilities are the product).
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ import numpy as np
 import pandas as pd
 
 from heatwave.features.build import ASOF_FEATURES
+from heatwave.features.targets import in_window
 from heatwave.models.baselines import M0Window
 
 
@@ -43,9 +45,11 @@ class M3:
         seed: int | None = None,
         params: dict | None = None,
         use_monotone: bool | None = None,
+        eval_season=None,
     ):
         m = cfg["m3"]
         self.cfg, self.target, self.inner = cfg, target, inner_seasons
+        self.eval_season = eval_season
         self.features = list(features or default_features(target))
         self.params = {**m["params"], **(params or {})}
         self.params["seed"] = m["seeds"][0] if seed is None else seed
@@ -75,39 +79,56 @@ class M3:
         p = np.clip(clim, 1e-4, 1 - 1e-4)
         return np.column_stack(cols).astype(np.float32, copy=False), np.log(p / (1 - p))
 
-    def fit(self, train: pd.DataFrame):
+    def datasets(self, train: pd.DataFrame):
+        """Binned (full, outer, inner) LightGBM datasets: outer = training seasons
+        before the inner block; inner = the last `inner` seasons (in-season rows
+        only when `eval_season` is set). Bins once; outer and inner are subsets."""
         if self.target == "window":
             self.m0 = M0Window(self.cfg).fit(train)
         years = self._year(train)
-        last = sorted(years.unique())[-self.inner :]
-        inner = np.flatnonzero(years.isin(last).to_numpy())
-        outer = np.flatnonzero(~years.isin(last).to_numpy())
+        last = years.isin(sorted(years.unique())[-self.inner :]).to_numpy()
+        keep = np.ones(len(train), bool)
+        if self.eval_season is not None:
+            day = (
+                train["valid_date"]
+                if self.target == "lead"
+                else train["issue_date"] + pd.Timedelta(days=1)
+            )
+            keep = in_window(day, self.eval_season)
+        inner, outer = np.flatnonzero(last & keep), np.flatnonzero(~last)
         x, margin = self._x(train)
-        y = train["y"].to_numpy(dtype=float)
-
-        # Bin once; the early-stopping split uses subsets of the same binned data.
+        # feature_pre_filter off: tuning changes min_child_samples on the same bins.
         full = lgb.Dataset(
             x,
-            y,
+            train["y"].to_numpy(dtype=float),
             init_score=margin,
             feature_name=self.features,
-            params={"max_bin": self.params["max_bin"], "verbose": -1},
+            params={"max_bin": self.params["max_bin"], "verbose": -1, "feature_pre_filter": False},
         ).construct()
         del x
         fit_part = full.subset(outer)
         fit_part.set_init_score(margin[outer])
         inner_part = full.subset(inner)
         inner_part.set_init_score(margin[inner])
+        return full, fit_part, inner_part
+
+    def early_stop(self, fit_part, inner_part, params: dict | None = None):
+        """Boost on outer, stop on inner. Returns (rounds, inner log loss)."""
         first = lgb.train(
-            self.params,
+            {**self.params, **(params or {})},
             fit_part,
             num_boost_round=self.max_rounds,
             valid_sets=[inner_part],
             callbacks=[lgb.early_stopping(self.patience, verbose=False)],
         )
-        self.best_rounds = max(1, int(first.best_iteration))
-        self.inner_logloss = float(first.best_score["valid_0"]["binary_logloss"])
-        del first, fit_part, inner_part
+        return max(1, int(first.best_iteration)), float(
+            first.best_score["valid_0"]["binary_logloss"]
+        )
+
+    def fit(self, train: pd.DataFrame):
+        full, fit_part, inner_part = self.datasets(train)
+        self.best_rounds, self.inner_logloss = self.early_stop(fit_part, inner_part)
+        del fit_part, inner_part
         self.booster = lgb.train(self.params, full, num_boost_round=self.best_rounds)
         del full
         return self
