@@ -563,6 +563,80 @@ def cmd_forecast(args: argparse.Namespace) -> None:
     print(json.dumps(summary, indent=2))
 
 
+def _publish_context():
+    cfg, paths = _ingest_context()
+    model_cfg = read_yaml("models.yaml")
+    frozen = model_cfg["frozen"]
+    spec = json.loads(
+        (REPO_ROOT / frozen["dir"] / f"{frozen['version']}.json").read_text(encoding="utf-8")
+    )
+    d = pd.read_parquet(paths.root / "reference" / "districts.parquet")
+    names = dict(zip(d["district_id"], d["name"], strict=True))
+    return cfg, paths, read_yaml("publish.yaml"), spec, names
+
+
+def cmd_outcomes(args: argparse.Namespace) -> None:
+    from heatwave.ingest.raw_store import RawStore
+    from heatwave.ingest.run import utc_now
+    from heatwave.pipeline import daily, outcomes
+
+    cfg, paths = _ingest_context()
+    year = utc_now().year
+    store = RawStore.from_config(cfg, paths.root)
+    _, labels = daily.recent_inputs(
+        store,
+        paths.root,
+        cfg,
+        load_problem(),
+        daily.district_statics(paths.root),
+        [y for y in (year - 1, year) if y in store.years()],
+    )
+    for path in outcomes.run(paths.root, labels):
+        print(f"wrote {path}")
+
+
+def cmd_build_site(args: argparse.Namespace) -> None:
+    from heatwave.publish import site
+    from heatwave.validation import walk_forward
+
+    _, paths, pub, spec, names = _publish_context()
+    regions = walk_forward.regions(REPO_ROOT / "configs" / "regions.yaml")
+    out = site.build(
+        paths.root / "forecasts",
+        Path(args.out),
+        names,
+        regions,
+        spec,
+        pub["repo_url"],
+        pub["keep_days"],
+    )
+    print(json.dumps(out))
+
+
+def cmd_send_alerts(args: argparse.Namespace) -> None:
+    from heatwave.publish import alerts
+
+    _, paths, pub, _, names = _publish_context()
+    files = sorted((paths.root / "forecasts").glob("issue_year=*/*.parquet"), key=lambda f: f.stem)
+    if not files:
+        raise SystemExit("no forecasts")
+    rows = pd.read_parquet(files[-1])
+    print(alerts.send(rows, names, pub, pub["site_url"], paths.root / "alerts"))
+
+
+def cmd_hub_push_outputs(args: argparse.Namespace) -> None:
+    from heatwave import hub
+
+    cfg, paths = _ingest_context()
+    recent = sorted((paths.root / "forecasts").glob("issue_year=*/*.parquet"), key=lambda f: f.stem)
+    files = [
+        *recent[-3:],
+        *(paths.root / "outcomes").glob("*.parquet"),
+        *(paths.root / "alerts").glob("*.txt"),
+    ]
+    print(f"uploaded {hub.push(cfg, paths.root, files, 'daily forecast outputs')} files")
+
+
 def cmd_bench_m3(args: argparse.Namespace) -> None:
     from heatwave.validation import tuning
 
@@ -752,6 +826,18 @@ def main(argv: list[str] | None = None) -> None:
     fc.add_argument("--issue-date", help="replay a past date (needs --out)")
     fc.add_argument("--out", help="root folder for a replay's output")
     fc.set_defaults(func=cmd_forecast)
+    sub.add_parser("outcomes", help="what happened, for forecasts already observed").set_defaults(
+        func=cmd_outcomes
+    )
+    bs = sub.add_parser("build-site", help="the public static site and downloads")
+    bs.add_argument("--out", default="_site")
+    bs.set_defaults(func=cmd_build_site)
+    sub.add_parser("send-alerts", help="email if a district reaches Warning").set_defaults(
+        func=cmd_send_alerts
+    )
+    sub.add_parser("hub-push-outputs", help="upload forecasts, outcomes, alert marks").set_defaults(
+        func=cmd_hub_push_outputs
+    )
     dc = sub.add_parser("drift-check", help="label, POWER and IMD Tmax against station maxima")
     dc.add_argument("--download", action="store_true", help="fetch check_years station data first")
     dc.add_argument("--before", nargs=2, type=int, default=[2016, 2020])

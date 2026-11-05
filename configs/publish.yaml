@@ -1,0 +1,7 @@
+# Public site and alerts (reference.md §5.2, docs/decisions/012).
+# Account and recipient are GitHub secrets: ALERT_SMTP_USER, ALERT_SMTP_PASSWORD, ALERT_TO.
+site_url: https://tarun-rai21.github.io/CRO-Heatwave/
+repo_url: https://github.com/tarun-rai21/CRO-Heatwave
+keep_days: 30                    # past days offered as CSV on the site
+smtp_host: smtp.gmail.com
+smtp_port: 465

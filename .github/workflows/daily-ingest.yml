@@ -1,9 +1,9 @@
-name: Daily ingest
+name: Daily run
 
-# Re-fetches the trailing 120 days of NASA POWER data for every grid cell and
-# appends new or revised values to the private Hugging Face dataset
-# (reference.md §2.3, §5.4). Runs long before any model exists, so that
-# provisional-vs-final pairs and the real data latency are on record.
+# The whole daily run (reference.md §5.4): download the trailing 120 days of NASA POWER
+# data, forecast, fill outcomes, rebuild the public site, email on Warning. A failed
+# download or validation still publishes: the forecast step falls back to climatology
+# and says so (§5.5). The final validate step then fails the run, so GitHub emails the owner.
 
 on:
   schedule:
@@ -14,10 +14,16 @@ concurrency:
   group: daily-ingest
   cancel-in-progress: false # never run two ingests at once
 
+permissions:
+  contents: read
+
 jobs:
-  ingest:
+  daily:
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write # keep-alive: GitHub stops schedules after 60 days without activity
     env:
       HF_TOKEN: ${{ secrets.HF_TOKEN }}
       HF_DATASET_REPO: ${{ vars.HF_DATASET_REPO }}
@@ -33,9 +39,70 @@ jobs:
         run: uv sync --locked --no-dev
 
       - name: Ingest trailing window (pull, fetch, append, push)
+        id: ingest
+        continue-on-error: true
         run: uv run heatwave ingest-daily --sync
+
+      # The label's normals need Tmax from 1991-2020, so all of raw/power is read.
+      - name: Pull what the forecast needs
+        run: >
+          uv run heatwave hub-pull --only reference raw/power runs features/development_climatology
+          models/frozen forecasts outcomes alerts
+
+      - name: Forecast
+        run: uv run heatwave forecast
+
+      - name: Outcomes
+        continue-on-error: true
+        run: uv run heatwave outcomes
+
+      - name: Build site
+        run: uv run heatwave build-site --out _site
+
+      - name: Save outputs
+        run: uv run heatwave hub-push-outputs
+
+      - name: Email on Warning
+        continue-on-error: true
+        env:
+          ALERT_SMTP_USER: ${{ secrets.ALERT_SMTP_USER }}
+          ALERT_SMTP_PASSWORD: ${{ secrets.ALERT_SMTP_PASSWORD }}
+          ALERT_TO: ${{ secrets.ALERT_TO }}
+        run: |
+          uv run heatwave send-alerts
+          uv run heatwave hub-push-outputs
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Keep the schedule alive
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${GITHUB_REPOSITORY}/actions/workflows/daily-ingest.yml/enable"
 
       # Fails the run (GitHub emails the repo owner) on impossible values, a cell
       # missing the newest day, or data older than the latency limit.
       - name: Validate
         run: uv run heatwave validate
+
+      - name: Report a failed download
+        if: steps.ingest.outcome == 'failure'
+        run: |
+          echo "::error::the download step failed; see its log"
+          exit 1
+
+  deploy:
+    needs: daily
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
