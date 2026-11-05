@@ -516,6 +516,53 @@ def cmd_drift_check(args: argparse.Namespace) -> None:
     print(out["summary"].round(3).to_string(index=False))
 
 
+def cmd_forecast(args: argparse.Namespace) -> None:
+    """Today's forecast (India date), after the daily gate; a failed gate means degraded,
+    never a stale forecast. A past --issue-date is a replay: no gate, written to --out,
+    using today's best-known data rather than what was known that day."""
+    from heatwave.ingest.run import utc_now
+    from heatwave.pipeline import daily
+    from heatwave.quality.report import validate_recent
+
+    if args.issue_date and not args.out:
+        raise SystemExit("a replay with --issue-date needs --out: it is not a real forecast")
+    cfg, paths = _ingest_context()
+    problem, model_cfg = load_problem(), read_yaml("models.yaml")
+    frozen = model_cfg["frozen"]
+    issue = args.issue_date or (utc_now() + pd.Timedelta(hours=5, minutes=30)).date().isoformat()
+    ok, why = True, ""
+    if not args.issue_date:
+        gate = validate_recent(cfg, read_yaml("quality.yaml"), paths, utc_now().date())
+        ok, why = gate["ok"], "; ".join(gate["problems"])
+    plan, rows = daily.run(
+        problem,
+        cfg,
+        read_yaml("features.yaml"),
+        model_cfg,
+        paths.root,
+        REPO_ROOT / frozen["dir"] / f"{frozen['version']}.json",
+        issue,
+        ok,
+        why,
+    )
+    out = daily.forecast_path(Path(args.out) if args.out else paths.root, issue)
+    daily.write(rows, out)
+    window = rows[rows["target"] == "window"]
+    summary = {
+        "issue_date": issue,
+        "status": plan.status,
+        "reason": plan.reason,
+        "asof_date": str(plan.asof_date.date()) if plan.asof_date is not None else None,
+        "data_age_days": plan.data_age_days,
+        "rows": len(rows),
+        "in_season": bool(window["in_season"].iloc[0]),
+        "tiers": window["tier"].value_counts().to_dict(),
+        "window_mean_p": None if window["p"].isna().all() else round(float(window["p"].mean()), 4),
+        "file": str(out),
+    }
+    print(json.dumps(summary, indent=2))
+
+
 def cmd_bench_m3(args: argparse.Namespace) -> None:
     from heatwave.validation import tuning
 
@@ -701,6 +748,10 @@ def main(argv: list[str] | None = None) -> None:
     )
     ft.add_argument("--rescore-info", metavar="NAME", help="after the test: re-score, not a test")
     ft.set_defaults(func=cmd_final_test)
+    fc = sub.add_parser("forecast", help="one day's forecast from the frozen model")
+    fc.add_argument("--issue-date", help="replay a past date (needs --out)")
+    fc.add_argument("--out", help="root folder for a replay's output")
+    fc.set_defaults(func=cmd_forecast)
     dc = sub.add_parser("drift-check", help="label, POWER and IMD Tmax against station maxima")
     dc.add_argument("--download", action="store_true", help="fetch check_years station data first")
     dc.add_argument("--before", nargs=2, type=int, default=[2016, 2020])

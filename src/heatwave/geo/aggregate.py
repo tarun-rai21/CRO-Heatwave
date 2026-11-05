@@ -21,11 +21,16 @@ from heatwave.ingest.raw_store import RawStore
 
 
 def power_district_daily(
-    store: RawStore, weights: pd.DataFrame, variables: list[str], cellmax_min_share: float
+    store: RawStore,
+    weights: pd.DataFrame,
+    variables: list[str],
+    cellmax_min_share: float,
+    years: list[int] | None = None,
 ) -> pd.DataFrame:
     """One row per (district_id, obs_date): area-weighted mean of each variable,
-    T2M_MAX_cellmax, and n_missing (cell-variable values absent that day)."""
-    sql = store.best_sql()
+    T2M_MAX_cellmax, and n_missing (cell-variable values absent that day). With `years`,
+    only those observation years are read."""
+    sql = store.best_sql(years)
     if sql is None:
         raise RuntimeError("raw store is empty")
     var_list = ", ".join(f"'{v}'" for v in variables)

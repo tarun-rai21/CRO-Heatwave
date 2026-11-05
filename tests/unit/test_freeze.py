@@ -43,6 +43,7 @@ def frozen_from(tmp_path, train):
     window.m0.table.to_parquet(tmp_path / "t.parquet", index=False)
     m2 = CFG["baselines"]["m2"]
     spec = {
+        "version": "test",
         "features": list(m2["features"]),
         "clim_clip": list(m2["clim_clip"]),
         "m0_smooth_days": CFG["baselines"]["m0_window"]["smooth_days"],
