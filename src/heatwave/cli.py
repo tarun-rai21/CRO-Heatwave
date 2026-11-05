@@ -270,6 +270,59 @@ def cmd_tune_m3(args: argparse.Namespace) -> None:
     print(json.dumps(out, indent=2))
 
 
+def cmd_evaluate_m3_tuned(args: argparse.Namespace) -> None:
+    from heatwave.models.gbm import M3
+    from heatwave.validation import tuning, walk_forward
+
+    _, paths = _ingest_context()
+    problem, model_cfg = load_problem(), read_yaml("models.yaml")
+    region_map = walk_forward.regions(REPO_ROOT / "configs" / "regions.yaml")
+    folds = [f.fold for f in problem.validation.folds]
+    oof_dir = paths.root / "oof"
+    for target in ("lead", "window"):
+        study = paths.root / "models" / f"m3_tuning_{target}_study.db"
+        choice = tuning.nested_choice(tuning.load_study(study, target), folds)
+        (paths.root / "models" / f"m3_nested_choice_{target}.json").write_text(
+            json.dumps(choice, indent=2)
+        )
+        print(target, {k: v["trial"] for k, v in choice.items()})
+        walk_forward.VARIANTS["M3T"] = lambda t, fold, c=choice: M3(
+            model_cfg,
+            t,
+            problem.validation.inner_block_seasons,
+            eval_season=problem.evaluation_season,
+            params=c[fold]["params"],
+        )
+        oof = walk_forward.run(
+            problem,
+            model_cfg,
+            paths.root,
+            region_map,
+            target,
+            ["M0", "M3T"],
+            checkpoint=oof_dir / "checkpoints_m3_tuned",
+        )
+        oof.to_parquet(oof_dir / f"m3_tuned_{target}.parquet", index=False)
+        print(target, "done; fits", json.dumps(oof.attrs["fits"]))
+
+
+def cmd_evaluate_sliding(args: argparse.Namespace) -> None:
+    from heatwave.models import baselines
+    from heatwave.validation import walk_forward
+
+    _, paths = _ingest_context()
+    problem, model_cfg = load_problem(), read_yaml("models.yaml")
+    region_map = walk_forward.regions(REPO_ROOT / "configs" / "regions.yaml")
+    walk_forward.VARIANTS["M2S"] = lambda t, fold: baselines.SlidingWindow(
+        baselines.make("M2", t, model_cfg), t, model_cfg["baselines"]["m2"]["sliding_years"]
+    )
+    for target in ("lead", "window"):
+        oof = walk_forward.run(
+            problem, model_cfg, paths.root, region_map, target, ["M0", "M2", "M2S"]
+        )
+        oof.to_parquet(paths.root / "oof" / f"m2_sliding_{target}.parquet", index=False)
+
+
 def cmd_bench_m3(args: argparse.Namespace) -> None:
     from heatwave.validation import tuning
 
@@ -436,6 +489,12 @@ def main(argv: list[str] | None = None) -> None:
     tune.add_argument("--threads", type=int, default=None, help="default: models.yaml")
     tune.add_argument("--push", action="store_true", help="upload the study to HF after each trial")
     tune.set_defaults(func=cmd_tune_m3)
+    sub.add_parser(
+        "evaluate-m3-tuned", help="walk-forward of LightGBM with fold-honest tuned parameters"
+    ).set_defaults(func=cmd_evaluate_m3_tuned)
+    sub.add_parser(
+        "evaluate-sliding", help="walk-forward of logistic regression, sliding vs expanding"
+    ).set_defaults(func=cmd_evaluate_sliding)
     bench = sub.add_parser("bench-m3", help="time default LightGBM on one fold per device")
     bench.add_argument("--target", choices=["lead", "window"], default="lead")
     bench.add_argument("--fold", type=int, default=5)

@@ -16,6 +16,7 @@ baselines:
     clim_clip: [0.001, 0.999]
     C: 1.0                         # inverse L2 strength on standardised features
     max_iter: 500
+    sliding_years: 20              # compared once with expanding training (reference.md §3.3)
 
 m3:                                # LightGBM (reference.md §4.5); regularised defaults
   params:

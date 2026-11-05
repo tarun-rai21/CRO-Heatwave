@@ -241,6 +241,24 @@ class M2Window:
         return self.lr.predict_one(self.model, rows, self.m0.predict(rows))
 
 
+class SlidingWindow:
+    """A model trained only on the last `years` target years of its training rows
+    (reference.md §3.3). Climatology inputs still come from the fold's own fit."""
+
+    def __init__(self, model, target: str, years: int):
+        self.model, self.target, self.years = model, target, years
+        self.name = model.name
+
+    def fit(self, train):
+        date = train["valid_date"] if self.target == "lead" else train["issue_date"]
+        year = date.dt.year
+        self.model.fit(train[year > year.max() - self.years])
+        return self
+
+    def predict(self, rows):
+        return self.model.predict(rows)
+
+
 def make(name: str, target: str, cfg: dict):
     table = {
         ("M0", "lead"): lambda: M0Lead(),

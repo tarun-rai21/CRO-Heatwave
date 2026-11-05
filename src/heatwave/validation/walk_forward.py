@@ -37,11 +37,11 @@ COLUMNS = [
 ]
 
 
-def make_model(name: str, target: str, model_cfg: dict, problem: Problem):
+def make_model(name: str, target: str, model_cfg: dict, problem: Problem, fold: int):
     """Baselines by name; 'M3' is LightGBM with defaults; 'M3<suffix>' variants are
     built by the caller and registered in VARIANTS."""
     if name in VARIANTS:
-        return VARIANTS[name](target)
+        return VARIANTS[name](target, fold)
     if name == "M3":
         from heatwave.models.gbm import M3
 
@@ -54,7 +54,7 @@ def make_model(name: str, target: str, model_cfg: dict, problem: Problem):
     return baselines.make(name, target, model_cfg)
 
 
-VARIANTS: dict = {}  # name -> callable(target) returning an unfitted model
+VARIANTS: dict = {}  # name -> callable(target, fold) returning an unfitted model
 
 
 def regions(path: Path) -> dict[str, str]:
@@ -123,7 +123,7 @@ def run(
         if target == "lead":
             out["valid_date"], out["lead"] = validate["valid_date"], validate["lead"]
         for name in models:
-            model = make_model(name, target, model_cfg, problem).fit(train)
+            model = make_model(name, target, model_cfg, problem, fold.fold).fit(train)
             out[f"p_{name}"] = np.clip(model.predict(validate), 0, 1)
             if hasattr(model, "best_rounds"):
                 fold_fits.append(

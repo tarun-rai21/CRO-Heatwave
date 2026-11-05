@@ -2,7 +2,7 @@
 
 The single guide for this project. Each section records decisions we have agreed on and why. Change a decision only by editing this file and adding an entry to the change log at the bottom.
 
-**Status:** Phases 0–6 complete (25 Oct 2026). Next: Phase 7 (§6.2). Goes live 1 March 2027 after shadow mode from mid-December.
+**Status:** Phases 0–6 complete; Phase 7 model choice made (5 Nov 2026): gate G3 failed, logistic regression goes live (decision record 009). Next: freeze the model and thresholds, then the final test. Goes live 1 March 2027 after shadow mode from mid-December.
 
 ---
 
@@ -185,7 +185,7 @@ Calendar-year splits leave a gap of months between training and testing, because
 - The 15 out-of-fold years (2006–2020) are pooled for headline development metrics and for fitting the calibrator.
 - **Everything fitted is refitted per fold on that fold's training years:** climatology, bias correction, scalers, the M0 reference, calibrators.
 - Early stopping and tuning use an **inner** block (the last 3 seasons of each fold's training years), never the fold being scored.
-- **Also run a sliding 20-year training window** once and compare. Under warming, old years may hurt.
+- **Also run a sliding 20-year training window** once and compare. Under warming, old years may hurt. **Result: adopted for logistic regression, marginally** (decision record 009).
 
 ### 3.4 Uncertainty
 
@@ -216,6 +216,7 @@ Rules are fixed **now, before seeing any results**. Probability thresholds are t
 
 - Users confirmed that **a missed heatwave is worse than a false alarm.** The 3 : 1 ratio is a working assumption; a cost curve over a range of ratios is reported so it can be revised with the officials.
 - Thresholds may differ by lead day. Whether they do is decided from the out-of-fold results, not tuned on the test years.
+- **Tiers are issued on the 10-day window only** (decided 5 Nov 2026 from the out-of-fold results, decision record 009). Single-day forecasts can't support the rules, so they are shown as plain probabilities. A Warning threshold needs at least 500 flagged rows across at least 3 seasons.
 
 ### 3.7 Stop/go checkpoints
 
@@ -293,6 +294,7 @@ No neural networks (LSTM/GRU/Transformer) and no random forest in V1. The data v
 
 - Start from the defaults above. Optuna, **≤ 40 trials**, objective = in-season log loss on each fold's inner block.
 - If the best trial beats the defaults by less than the bootstrap interval width, keep the defaults and record that.
+- A later fold's inner block overlaps earlier folds' validation years, so out-of-fold evaluation of tuned settings picks each fold's trial using only inner blocks up to that fold (decision record 009).
 
 ### 4.7 Feature selection
 
@@ -303,6 +305,7 @@ No neural networks (LSTM/GRU/Transformer) and no random forest in V1. The data v
 - Fitted **only on out-of-fold predictions**.
 - **Platt (logistic) scaling**, or beta calibration. Isotonic regression needs more positives than we have and produces step artefacts.
 - Calibration checked separately by month and by lead.
+- **Chosen:** Platt scaling, one calibrator per lead, at all leads (lead 10 is a recorded exception, decision record 009).
 - The production calibrator is fitted on all development out-of-fold predictions, then frozen with the model.
 - Sanity check: the window probability should be ≥ the largest per-lead probability (approximately). Large violations indicate a bug or bad calibration.
 
@@ -488,6 +491,7 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 - Finer-resolution inputs (e.g. ERA5-Land), if their extra latency is worth it.
 - Replace GADM boundaries with a current Survey of India–consistent 75-district file.
 - More station data for the label's bias correction, especially Bundelkhand and the east (IMD station records if obtainable). The current map rests on 4 fit stations plus 6 checks (decision record 005).
+- Try other model families (XGBoost, random forest) against the live logistic model, each judged by the G3 test on the onset subset with a paired interval, on a new evaluation block rather than repeated looks at 2006–2020 alone.
 - Ten separate per-lead models vs the single stacked model, if the stacked model underperforms at specific leads.
 - Slow climate indices (Niño-3.4, MJO) as features, if development results justify them.
 - Dockerfile for the daily run.
@@ -518,3 +522,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-10-25 | 3.5, 3.7, 4.4 | Phase 6: regions = UP's four economic regions; M1 adds a season band; M2 is one logistic model per lead; G2 passed after its M0 check was redesigned to an in-sample bug check (decision record 008) |
 | 2026-10-31 | 2.3 | Rainfall quarantine closed after POWER's silent fix of 27 Oct; a closed defect's unchanged values re-downloaded after the fix are used again (decision record 007) |
 | 2026-11-05 | 4.5, 4.6 | M3 early stopping and tuning score only in-season (March–July) inner-block rows; tuning runs on Kaggle (study synced via Hugging Face, resumable), GPU used only if it matches the CPU result; 40-trial cap unchanged |
+| 2026-11-05 | 3.3, 3.6, 3.7, 4.6, 4.8 | G3 failed: logistic regression goes live, trained on a sliding 20-year window, Platt-calibrated at all leads; tiers on the 10-day window only; tuned settings evaluated fold-honestly; XGBoost and random forest added to To do later (decision record 009) |

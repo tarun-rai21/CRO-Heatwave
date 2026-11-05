@@ -27,3 +27,18 @@ def test_sampled_parameters_stay_in_the_configured_space():
         p = tuning.sample(study.ask(), space)
         for k, v in p.items():
             assert space[k][0] <= v <= space[k][1], k
+
+
+def test_nested_choice_uses_only_inner_blocks_up_to_the_fold():
+    study = optuna.create_study()
+    # (running mean after fold 1, fold 2, fold 3): A leads early, B only after fold 3.
+    for name, running in (("A", [0.1, 0.1, 0.3]), ("B", [0.2, 0.2, 0.2])):
+        trial = study.ask()
+        for step, v in enumerate(running):
+            trial.report(v, step)
+        trial.set_user_attr("name", name)
+        study.tell(trial, running[-1])
+    choice = tuning.nested_choice(study, [1, 2, 3])
+    picked = {f: study.trials[c["trial"]].user_attrs["name"] for f, c in choice.items()}
+    assert picked == {1: "A", 2: "A", 3: "B"}
+    assert study.best_trial.number == choice[3]["trial"]  # the last fold's pick is the overall best

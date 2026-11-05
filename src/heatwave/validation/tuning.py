@@ -2,8 +2,13 @@
 
 Optuna, at most `m3.tuning.trials` trials. Objective: the mean over the 5 folds of
 the in-season log loss on each fold's INNER block (its last training seasons),
-with the number of rounds found by early stopping there. The folds' validation
-years are never used, so tuning cannot fit the out-of-fold results.
+with the number of rounds found by early stopping there.
+
+The inner block of a later fold overlaps the validation years of earlier ones
+(fold 2's inner block, 2006-2008, is fold 1's validation block), so one best trial
+over all folds has seen most of the OOF years. Out-of-fold evaluation therefore uses
+`nested_choice`: each fold gets the trial that was best on the inner blocks up to
+its own, all inside its training years. Fold 5's choice is the overall best trial.
 
 Trial 0 is the default parameters, so the best trial is never worse than them on
 this objective. Whether it is better by more than noise is decided afterwards on
@@ -134,6 +139,32 @@ def bench(
         print(out[-1])
         del fit_part, inner_part
         gc.collect()
+    return out
+
+
+def load_study(study_path: Path, target: str) -> optuna.Study:
+    return optuna.load_study(
+        study_name=f"m3_{target}", storage=f"sqlite:///{study_path.as_posix()}"
+    )
+
+
+def nested_choice(study: optuna.Study, folds: list[int]) -> dict[int, dict]:
+    """For each fold, the trial with the lowest running mean inner log loss up to that
+    fold (trials report it after every fold), using no later fold's inner block."""
+    S = optuna.trial.TrialState
+    out = {}
+    for step, fold in enumerate(folds):
+        seen = [
+            t
+            for t in study.trials
+            if t.state in (S.COMPLETE, S.PRUNED) and step in t.intermediate_values
+        ]
+        best = min(seen, key=lambda t: t.intermediate_values[step])
+        out[fold] = {
+            "trial": best.number,
+            "params": best.params,
+            "running_inner_logloss": best.intermediate_values[step],
+        }
     return out
 
 
