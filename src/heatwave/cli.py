@@ -364,6 +364,98 @@ def cmd_freeze_model(args: argparse.Namespace) -> None:
     print(f"wrote {json_dir / (version + '.json')}, {table_dir}, {report_dir / 'phase7_model.md'}")
 
 
+FINAL_TEST_REPORT = REPO_ROOT / "reports" / "final_test.md"
+REHEARSAL_YEARS = (2016, 2020)  # development years only
+
+
+def check_rehearsal_years(years: tuple[int, int], development: tuple[int, int]) -> None:
+    if years[0] < development[0] or years[1] > development[1]:
+        raise SystemExit(f"a rehearsal may use development years only, not {years}")
+
+
+def _final_test_guards(bar_path: Path, model_path: Path, tag: str) -> None:
+    """The real run: once only, on the tagged model, with a committed bar and code."""
+    import subprocess
+
+    started = FINAL_TEST_REPORT.with_suffix(".started")
+    if FINAL_TEST_REPORT.exists():
+        raise SystemExit(f"{FINAL_TEST_REPORT} exists: the final test runs only once")
+    if started.exists():
+        raise SystemExit(f"{started} exists: a run already started. Read it before doing anything")
+
+    def git(*a):
+        return subprocess.run(
+            ["git", *a], cwd=REPO_ROOT, capture_output=True, text=True, check=False
+        )
+
+    if not bar_path.exists() or git("ls-files", "--error-unmatch", str(bar_path)).returncode:
+        raise SystemExit(f"{bar_path} must be written and committed before the test")
+    dirty = git("status", "--porcelain", "--", *MODEL_PATHS).stdout.strip()
+    if dirty:
+        raise SystemExit("commit these before the test:\n" + dirty)
+    if git("diff", "--quiet", tag, "--", str(model_path)).returncode:
+        raise SystemExit(f"{model_path} differs from tag {tag}")
+
+
+def cmd_final_test(args: argparse.Namespace) -> None:
+    from heatwave.validation import final_test as ft
+
+    if not (args.write_bar or args.rehearse or args.run_once):
+        print(
+            "Nothing run. Use --write-bar, --rehearse DIR, or --run-once (the real, single test)."
+        )
+        return
+    _, paths = _ingest_context()
+    model_cfg = read_yaml("models.yaml")
+    frozen = model_cfg["frozen"]
+    model_path = REPO_ROOT / frozen["dir"] / f"{frozen['version']}.json"
+    bar_path = REPO_ROOT / frozen["dir"] / f"{frozen['version']}_g4_bar.json"
+    if args.run_once:
+        _final_test_guards(bar_path, model_path, frozen["version"])
+    problem = load_problem()
+
+    from heatwave.models.frozen import FrozenModel
+    from heatwave.validation import walk_forward
+
+    model = FrozenModel.load(model_path, paths.root / frozen["table_dir"])
+    if args.write_bar:
+        if bar_path.exists():
+            raise SystemExit(f"{bar_path} exists: the bar does not change once written")
+        oof = {
+            t: pd.read_parquet(paths.root / "oof" / f"m2_sliding_{t}.parquet")
+            for t in ("lead", "window")
+        }
+        bar = ft.development_bar(model.spec, oof["lead"], oof["window"])
+        bar_path.write_text(json.dumps(bar, indent=2), encoding="utf-8")
+        print(json.dumps(bar["range"], indent=2))
+        return
+
+    bar = json.loads(bar_path.read_text(encoding="utf-8"))
+    region_map = walk_forward.regions(REPO_ROOT / "configs" / "regions.yaml")
+    if args.run_once:
+        years, title = problem.validation.final_test, "Final test (gate G4)"
+        out = FINAL_TEST_REPORT
+        # Before any test row is read: a crash then cannot lead to a quiet second attempt.
+        out.with_suffix(".started").write_text(
+            f"started with {_code_version()}\n", encoding="utf-8"
+        )
+    else:
+        years, title = REHEARSAL_YEARS, "REHEARSAL on development years: not a result"
+        check_rehearsal_years(years, problem.validation.development)
+        out = Path(args.rehearse) / "final_test_rehearsal.md"
+        out.parent.mkdir(parents=True, exist_ok=True)
+    lead, window = ft.load_rows(problem, paths.root, years, model, region_map, bool(args.run_once))
+    outcome = ft.score(lead, window, model.spec, bar, model_cfg)
+    out.write_text(
+        ft.report(lead, window, outcome, bar, model.spec, model_cfg, title), encoding="utf-8"
+    )
+    if args.run_once:
+        out.with_suffix(".started").unlink()
+    print(title, "->", outcome["verdict"])
+    print(json.dumps(outcome, indent=2))
+    print(f"wrote {out}")
+
+
 def cmd_bench_m3(args: argparse.Namespace) -> None:
     from heatwave.validation import tuning
 
@@ -539,6 +631,15 @@ def main(argv: list[str] | None = None) -> None:
     fz = sub.add_parser("freeze-model", help="fit and freeze the production model and thresholds")
     fz.add_argument("--dry-run", metavar="DIR", help="write only to DIR; nothing is frozen")
     fz.set_defaults(func=cmd_freeze_model)
+    ft = sub.add_parser("final-test", help="gate G4; without a flag nothing runs")
+    ft.add_argument(
+        "--write-bar", action="store_true", help="write the pass bar (development only)"
+    )
+    ft.add_argument("--rehearse", metavar="DIR", help="whole path on development years only")
+    ft.add_argument(
+        "--run-once", action="store_true", help="the real test on 2021-2025: single use"
+    )
+    ft.set_defaults(func=cmd_final_test)
     bench = sub.add_parser("bench-m3", help="time default LightGBM on one fold per device")
     bench.add_argument("--target", choices=["lead", "window"], default="lead")
     bench.add_argument("--fold", type=int, default=5)

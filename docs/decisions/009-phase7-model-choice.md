@@ -89,5 +89,22 @@ Window against single-day check (§4.8): the window is below the highest single-
 ## Consequences
 
 - Frozen with `heatwave freeze-model` at code `425953c`, fitted on 2001–2020 (features `ft_e13be4154d21`, labels `lbl_9105574cbb3a`). The tables behind this record are generated in `reports/phase7_model.md`. The window climatology table is in the private dataset (`models/frozen/`), checked against the hash in the JSON.
-- Next: the single final test on 2021–2025 (gate G4).
+- Next: the single final test on 2021–2025 (gate G4), run with `heatwave final-test --run-once`.
+
+## Gate G4 pass bar (approved by the owner before the test)
+
+Stored in `configs/frozen/m2_v1_g4_bar.json`, computed from the 11 five-year development periods in 2006–2020 only, with other-fold calibrators for skill.
+
+**Pass:** all four main skills are above 0 and at or above the lowest development period: window all days 0.055, window onset 0.048, lead 1 all days 0.021, lead 1 onset 0.027.
+
+**Pass with concern:** a main skill above the highest period (possible leak); a Watch or Alert hit or false-alarm rate outside its range; or a window forecast bias above 6.5 percentage points. Warning is reported only, since it already misses its target in development.
+
+**Fail:** the model does not change and those years are not used again. Investigate before any claim to users (§3.7).
+
+Limits, stated before the result:
+
+- The bar is low: it asks whether skill is no worse than the worst stretch seen, not whether it is strong.
+- Skill fell through the 2010s, and 2016–2020 sits close to the floor (0.058 against 0.055), so a chance failure is possible.
+- The final-test years were not perfectly unseen. `reports/label_qa.md` lists their heatwave district-days (2021: 70, 2022: 655, 2023: 89, 2024: 1,123, 2025: 31) and `notebooks/explore.ipynb` charts yearly rates. These were not used to set the bar or make any decision. 2022 and 2024 will dominate the result.
+- The test uses final MERRA-2 data, while live forecasts use provisional data. Shadow mode measures that gap.
 - Other model families (XGBoost, random forest) and NWP inputs are on the To do later list. New candidates should not be judged only by repeated looks at 2006–2020.
