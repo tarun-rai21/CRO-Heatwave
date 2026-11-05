@@ -81,6 +81,28 @@ def send_test(cfg: dict, site_url: str, smtp=None) -> None:
     _deliver(msg, user, password, cfg, smtp)
 
 
+def send_problems(
+    problems: list[dict], issue, cfg: dict, site_url: str, marker_dir: Path, subject: str, smtp=None
+) -> str:
+    """One email per issue date listing failed checks. Returns what happened."""
+    if not problems:
+        return "none"
+    marker = marker_dir / f"monitor_{issue}.txt"
+    if marker.exists():
+        return "already sent"
+    user, password, to = _account()
+    if not (user and password and to):
+        return "not configured"
+    msg = EmailMessage()
+    msg["Subject"], msg["From"], msg["To"] = subject, user, to
+    lines = [f"{c['check']}: {c['detail']}" for c in problems]
+    msg.set_content("\n".join(lines) + f"\n\nSee docs/runbook.md.\n{site_url}\n")
+    _deliver(msg, user, password, cfg, smtp)
+    marker_dir.mkdir(parents=True, exist_ok=True)
+    marker.write_text("sent\n", encoding="utf-8")
+    return "sent"
+
+
 def send(
     rows: pd.DataFrame, names: dict, cfg: dict, site_url: str, marker_dir: Path, smtp=None
 ) -> str:

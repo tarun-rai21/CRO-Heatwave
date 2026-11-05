@@ -45,7 +45,9 @@ th:first-child,td:first-child,th.l,td.l{text-align:left}th{font-weight:600}
 
 def _page(title: str, body: str, nav: bool = True) -> str:
     links = (
-        '<nav><a href="index.html">Forecast</a><a href="about.html">About</a></nav>' if nav else ""
+        '<nav><a href="index.html">Forecast</a><a href="scorecard.html">Scorecard</a><a href="about.html">About</a></nav>'
+        if nav
+        else ""
     )
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
@@ -189,6 +191,7 @@ def build(
     spec: dict,
     repo_url: str,
     keep_days: int,
+    scorecard_body: str = "",
 ) -> dict:
     """Write the site from the newest forecast file, plus CSVs of the last keep_days."""
     files = sorted(forecast_dir.glob("issue_year=*/*.parquet"), key=lambda f: f.stem)
@@ -200,6 +203,7 @@ def build(
     (out / ".nojekyll").write_text("")
     (out / "index.html").write_text(index_html(rows, names, regions), encoding="utf-8")
     (out / "about.html").write_text(about_html(spec, repo_url), encoding="utf-8")
+    (out / "scorecard.html").write_text(_page("Scorecard", scorecard_body), encoding="utf-8")
     table = _table_for_download(rows, names)
     table.to_csv(data / "latest.csv", index=False)
     records = json.loads(table.replace({np.nan: None}).to_json(orient="records"))

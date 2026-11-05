@@ -14,7 +14,18 @@ import pandas as pd
 
 from heatwave.labels.definition import window_target
 
-KEEP = ["issue_date", "target", "district_id", "valid_date", "window_end", "p", "p_clim", "tier"]
+KEEP = [
+    "issue_date",
+    "target",
+    "district_id",
+    "valid_date",
+    "window_end",
+    "p",
+    "p_clim",
+    "tier",
+    "in_season",
+    "status",
+]
 
 
 def fill(forecasts: pd.DataFrame, labels: pd.DataFrame) -> pd.DataFrame:

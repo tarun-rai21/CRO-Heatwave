@@ -1,0 +1,39 @@
+name: Monthly checks
+
+# Provisional-against-final data, and label Tmax against stations (reference.md §5.6).
+# Results go to the private dataset; the owner is emailed if either needs a look.
+
+on:
+  schedule:
+    - cron: "0 6 1 * *" # 1st of each month
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  monthly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      HF_TOKEN: ${{ secrets.HF_TOKEN }}
+      HF_DATASET_REPO: ${{ vars.HF_DATASET_REPO }}
+      HF_HUB_DISABLE_PROGRESS_BARS: "1"
+      ALERT_SMTP_USER: ${{ secrets.ALERT_SMTP_USER }}
+      ALERT_SMTP_PASSWORD: ${{ secrets.ALERT_SMTP_PASSWORD }}
+      ALERT_TO: ${{ secrets.ALERT_TO }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --locked --no-dev
+
+      - name: Pull what the checks need
+        run: uv run heatwave hub-pull --only reference raw/power raw/stations runs monitoring
+
+      - name: Run the checks
+        run: uv run heatwave monitor-monthly --push

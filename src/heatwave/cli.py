@@ -600,7 +600,11 @@ def cmd_build_site(args: argparse.Namespace) -> None:
     from heatwave.validation import walk_forward
 
     _, paths, pub, spec, names = _publish_context()
+    from heatwave.monitoring import scorecard
+
     regions = walk_forward.regions(REPO_ROOT / "configs" / "regions.yaml")
+    files = sorted((paths.root / "outcomes").glob("*.parquet"))
+    outcomes = pd.concat([pd.read_parquet(x) for x in files]) if files else None
     out = site.build(
         paths.root / "forecasts",
         Path(args.out),
@@ -609,6 +613,7 @@ def cmd_build_site(args: argparse.Namespace) -> None:
         spec,
         pub["repo_url"],
         pub["keep_days"],
+        scorecard.body_html(outcomes),
     )
     print(json.dumps(out))
 
@@ -638,8 +643,148 @@ def cmd_hub_push_outputs(args: argparse.Namespace) -> None:
         *recent[-3:],
         *(paths.root / "outcomes").glob("*.parquet"),
         *(paths.root / "alerts").glob("*.txt"),
+        *(paths.root / "monitoring").glob("*.parquet"),
     ]
     print(f"uploaded {hub.push(cfg, paths.root, files, 'daily forecast outputs')} files")
+
+
+def cmd_monitor(args: argparse.Namespace) -> None:
+    """The daily checks on the newest forecast. --write-baseline fixes their limits from
+    development data; it never overwrites."""
+    from heatwave.features.build import compute_features
+    from heatwave.features.pipeline import load_climatology
+    from heatwave.ingest.raw_store import RawStore
+    from heatwave.ingest.run import utc_now
+    from heatwave.monitoring import checks
+    from heatwave.pipeline import daily
+    from heatwave.publish import alerts
+
+    cfg, paths, pub, spec, _ = _publish_context()
+    frozen = read_yaml("models.yaml")["frozen"]
+    base_path = REPO_ROOT / frozen["dir"] / f"{frozen['version']}_monitor.json"
+    if args.write_baseline:
+        if base_path.exists():
+            raise SystemExit(f"{base_path} exists: the limits do not change with the model frozen")
+        window = pd.read_parquet(paths.root / "oof" / "m2_sliding_window.parquet")
+        features = pd.read_parquet(
+            paths.root / "features" / "development.parquet",
+            columns=["asof_date", *checks.ANOMALY_FEATURES],
+        )
+        checks.write_baseline(spec, window, features, base_path)
+        print(f"wrote {base_path}")
+        return
+    baseline = json.loads(base_path.read_text(encoding="utf-8"))
+    files = sorted((paths.root / "forecasts").glob("issue_year=*/*.parquet"), key=lambda f: f.stem)
+    if not files:
+        raise SystemExit("no forecasts")
+    rows = pd.read_parquet(files[-1])
+    found = checks.forecast_checks(rows, baseline)
+    asof = rows["asof_date"].iloc[0]
+    if pd.notna(asof):
+        problem = load_problem()
+        districts = daily.district_statics(paths.root)
+        store = RawStore.from_config(cfg, paths.root)
+        t = pd.Timestamp(asof)
+        years = [y for y in (t.year - 1, t.year) if y in store.years()]
+        d, labels = daily.recent_inputs(store, paths.root, cfg, problem, districts, years)
+        d, labels = d[d["obs_date"] <= t], labels[labels["obs_date"] <= t]
+        clim = load_climatology(paths.root / "features" / "development_climatology")
+        feats = compute_features(d, labels, clim, districts, read_yaml("features.yaml"))
+        found += checks.feature_checks(feats, t, baseline)
+    else:
+        found += checks.feature_checks(pd.DataFrame(), None, baseline)
+    checks.append_log(
+        paths.root / "monitoring" / "daily.parquet", checks.log_row(rows, found, utc_now())
+    )
+    for c in found:
+        print(f"{c['level']:8s}{c['check']}: {c['detail']}")
+    issue = files[-1].stem
+    print(
+        alerts.send_problems(
+            checks.problems(found),
+            issue,
+            pub,
+            pub["site_url"],
+            paths.root / "alerts",
+            f"Heatwave pipeline: failed checks ({issue})",
+        )
+    )
+
+
+def cmd_monitor_monthly(args: argparse.Namespace) -> None:
+    from heatwave import hub
+    from heatwave.ingest import gsod
+    from heatwave.ingest.raw_store import RawStore
+    from heatwave.ingest.run import utc_now
+    from heatwave.labels import drift_check
+    from heatwave.monitoring import monthly
+    from heatwave.pipeline import daily
+    from heatwave.publish import alerts
+
+    cfg, paths, pub, _, _ = _publish_context()
+    problem, g = load_problem(), cfg["gsod"]
+    today = utc_now()
+    store = RawStore.from_config(cfg, paths.root)
+    years = [y for y in store.years() if y >= today.year - 1]
+    skew = monthly.skew(store, years)
+
+    # The current year's stations change daily, so always a fresh copy.
+    live = paths.root / "cache" / "gsod_live"
+    stations = pd.read_parquet(paths.root / "reference" / "stations.parquet")
+    (live / "manifest.parquet").unlink(missing_ok=True)
+    gsod.download({**g, "years": [today.year, today.year]}, stations, live)
+    days = monthly.read_days(paths.root, g, live)
+    where_file = paths.root / "reference" / "station_districts.parquet"
+    if where_file.exists():
+        where = pd.read_parquet(where_file)
+    else:
+        from heatwave.geo.weights import load_districts
+
+        where = drift_check.station_districts(
+            stations, load_districts(cfg["boundaries"], REPO_ROOT), cfg["geo"]["equal_area_crs"]
+        )
+        where.to_parquet(where_file, index=False)
+    t = problem.target
+    reference = t.bias_drift_hold_years
+    label_years = sorted({*range(reference[0], reference[1] + 1), today.year})
+    _, labels = daily.recent_inputs(
+        store,
+        paths.root,
+        cfg,
+        problem,
+        daily.district_statics(paths.root),
+        [y for y in label_years if y in store.years()],
+    )
+    months = sorted({m for m, _ in problem.evaluation_season.days()})
+    label = monthly.label_against_stations(days, where, labels, today.year, reference, months)
+
+    out = {
+        "run_at": str(today),
+        "skew": json.loads(skew.to_json(orient="records")),
+        "label_against_stations": label,
+    }
+    month = f"{today:%Y-%m}"
+    path = paths.root / "monitoring" / f"monthly_{month}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    print(skew.round(3).to_string(index=False))
+    print(label["level"], label["detail"])
+    flagged = monthly.skew_flags(skew)
+    if label["level"] == "warn":
+        flagged.append({"check": "label_against_stations", "detail": label["detail"]})
+    print(
+        alerts.send_problems(
+            flagged,
+            month,
+            pub,
+            pub["site_url"],
+            paths.root / "alerts",
+            f"Heatwave pipeline: monthly checks need a look ({month})",
+        )
+    )
+    if args.push:
+        n = hub.push(cfg, paths.root, [path, where_file], f"monthly checks {month}")
+        print(f"uploaded {n} files")
 
 
 def cmd_bench_m3(args: argparse.Namespace) -> None:
@@ -843,6 +988,12 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("hub-push-outputs", help="upload forecasts, outcomes, alert marks").set_defaults(
         func=cmd_hub_push_outputs
     )
+    mon = sub.add_parser("monitor", help="daily checks on the newest forecast")
+    mon.add_argument("--write-baseline", action="store_true", help="fix the limits, once")
+    mon.set_defaults(func=cmd_monitor)
+    mm = sub.add_parser("monitor-monthly", help="provisional against final; label against stations")
+    mm.add_argument("--push", action="store_true", help="upload the result to the private dataset")
+    mm.set_defaults(func=cmd_monitor_monthly)
     dc = sub.add_parser("drift-check", help="label, POWER and IMD Tmax against station maxima")
     dc.add_argument("--download", action="store_true", help="fetch check_years station data first")
     dc.add_argument("--before", nargs=2, type=int, default=[2016, 2020])
