@@ -2,7 +2,7 @@
 
 The single guide for this project. Each section records decisions we have agreed on and why. Change a decision only by editing this file and adding an entry to the change log at the bottom.
 
-**Status:** Phases 0–6 complete; Phase 7 model choice made (5 Nov 2026): gate G3 failed, logistic regression goes live, frozen as `m2_v1` (decision record 009). Final test run once: G4 passed with concern (decision record 010). Daily run and public site launched in shadow mode (decision record 012). Soil moisture removed because of its provisional data: `m2_v2` is the live model (decision record 013); its only fresh test is the 2026 season check. Next: runbook, model card and data card. Goes live 1 March 2027 after shadow mode from mid-December.
+**Status:** Phases 0–6 complete; Phase 7 model choice made (5 Nov 2026): gate G3 failed, logistic regression goes live, frozen as `m2_v1` (decision record 009). Final test run once: G4 passed with concern (decision record 010). Daily run and public site launched in shadow mode (decision record 012). Soil moisture removed because of its provisional data: `m2_v2` is the live model (decision record 013); its only fresh test is the 2026 season check. Runbook, model card and data card written. Next: shadow mode and the 2026 season check. Goes live 1 March 2027 after shadow mode from mid-December.
 
 ---
 
@@ -334,7 +334,7 @@ No neural networks (LSTM/GRU/Transformer) and no random forest in V1. The data v
 | Persistent data | **Hugging Face dataset repo, private.** Accessed with a token stored as a GitHub Actions secret; the laptop syncs from the same repo. Kept private because IMD data licence terms restrict redistribution |
 | Storage format | **Parquet** (partitioned by year where useful) + **DuckDB** for SQL over files. No database server |
 | User-facing output | **Static website rebuilt by each daily run, on GitHub Pages**, plus daily CSV/JSON downloads as a read-only API |
-| Alerts | Email or Telegram message when any district reaches **warning**; also used for pipeline-failure alerts |
+| Alerts | Email to the owner when any district reaches **warning**; also used for pipeline-failure alerts (decision record 012) |
 | Code repo | **Public** GitHub repo. No data, tokens or credentials in git |
 | Language / env | Python 3.12, **uv** with lockfile |
 | Data handling | **pandas**; **pandera** schemas for data checks |
@@ -530,3 +530,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-11-05 | 5.2, 5.4 | Daily run built: forecast, outcomes, public site on GitHub Pages, email alerts to the owner only (no Telegram); public launch without asking IMD, the owner's decision (decision record 012) |
 | 2026-11-06 | 5.6, 6.1 | Monitoring added. Provisional root soil moisture reads about 0.13 below final in September; open and blocking go-live (decision record 013) |
 | 2026-11-06 | 4.4, 6.1 | `m2_v2` frozen and in the daily run: logistic regression without soil moisture; tiers 14.1%, 27.4%, 34.7%; `m2_v1` kept as the record (decision record 013) |
+| 2026-11-06 | 5.2, 6.2 | Phase 10 documents written: `docs/runbook.md`, `reports/model_card.md`, `reports/data_card.md`; the daily run's keep-alive now also covers the monthly checks |

@@ -54,8 +54,9 @@ The final test (decision record 010) used final data, so it does not cover this.
 
 ## Now in place
 
-- The public site shows no probabilities until 15 February, so nothing misleading is published in the meantime.
-- `heatwave monitor-monthly` flags a soil moisture gap above 0.02 and emails the owner. Daily feature-drift checks also watch `gwetroot_anom` in season.
+- The public site shows no 10-day probabilities until mid-February, so nothing misleading is published in the meantime.
+- `heatwave monitor-monthly` still measures and stores the soil moisture gap each month, for the 2027 retrain, but no longer flags it or emails about it, because `m2_v2` doesn't use soil moisture. It flags the Tmax gap instead (below).
+- Daily feature-drift checks watch `tmax_anom` and `tmax_anom_mean7` in season, not `gwetroot_anom`.
 
 ## Decision and result
 
