@@ -67,6 +67,9 @@ def cmd_build_geo(args: argparse.Namespace) -> None:
     print(json.dumps(build_geo(read_yaml("data.yaml"), REPO_ROOT), indent=2))
 
 
+MODEL_PATHS = ("src", "configs", "pyproject.toml", "uv.lock")  # what can change a model
+
+
 def _code_version() -> str | None:
     """The git commit of this checkout, recorded with results."""
     import subprocess
@@ -76,7 +79,7 @@ def _code_version() -> str | None:
             ["git", "rev-parse", "HEAD"], cwd=REPO_ROOT, capture_output=True, text=True, check=True
         ).stdout.strip()
         dirty = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=no"],
+            ["git", "status", "--porcelain", "--", *MODEL_PATHS],
             cwd=REPO_ROOT,
             capture_output=True,
             text=True,
@@ -323,6 +326,44 @@ def cmd_evaluate_sliding(args: argparse.Namespace) -> None:
         oof.to_parquet(paths.root / "oof" / f"m2_sliding_{target}.parquet", index=False)
 
 
+def cmd_freeze_model(args: argparse.Namespace) -> None:
+    """Refuses to overwrite a frozen version or to freeze uncommitted code, unless the
+    run is a --dry-run, which writes only to the given directory."""
+    import subprocess
+
+    from heatwave.validation import freeze
+
+    _, paths = _ingest_context()
+    problem, model_cfg = load_problem(), read_yaml("models.yaml")
+    frozen = model_cfg["frozen"]
+    version = frozen["version"]
+    if args.dry_run:
+        json_dir = table_dir = report_dir = Path(args.dry_run)
+    else:
+        json_dir = REPO_ROOT / frozen["dir"]
+        table_dir = paths.root / frozen["table_dir"]
+        report_dir = REPO_ROOT / "reports"
+        if (json_dir / f"{version}.json").exists():
+            raise SystemExit(f"{version} exists: a frozen version is never overwritten")
+        dirty = subprocess.run(
+            ["git", "status", "--porcelain", "--", *MODEL_PATHS],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout.strip()
+        if dirty:
+            raise SystemExit("commit these before freezing:\n" + dirty)
+    spec, oof = freeze.build(problem, model_cfg, paths.root, table_dir, version, _code_version())
+    json_dir.mkdir(parents=True, exist_ok=True)
+    (json_dir / f"{version}.json").write_text(json.dumps(spec, indent=2), encoding="utf-8")
+    text = freeze.report(spec, oof, problem, model_cfg, paths.root)
+    (report_dir / "phase7_model.md").write_text(text, encoding="utf-8")
+    keys = ("version", "code_version", "fit_years", "tiers")
+    print(json.dumps({k: spec[k] for k in keys}, indent=2))
+    print(f"wrote {json_dir / (version + '.json')}, {table_dir}, {report_dir / 'phase7_model.md'}")
+
+
 def cmd_bench_m3(args: argparse.Namespace) -> None:
     from heatwave.validation import tuning
 
@@ -495,6 +536,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser(
         "evaluate-sliding", help="walk-forward of logistic regression, sliding vs expanding"
     ).set_defaults(func=cmd_evaluate_sliding)
+    fz = sub.add_parser("freeze-model", help="fit and freeze the production model and thresholds")
+    fz.add_argument("--dry-run", metavar="DIR", help="write only to DIR; nothing is frozen")
+    fz.set_defaults(func=cmd_freeze_model)
     bench = sub.add_parser("bench-m3", help="time default LightGBM on one fold per device")
     bench.add_argument("--target", choices=["lead", "window"], default="lead")
     bench.add_argument("--fold", type=int, default=5)

@@ -18,6 +18,16 @@ baselines:
     max_iter: 500
     sliding_years: 20              # compared once with expanding training (reference.md §3.3)
 
+tier_support:                      # reference.md §3.6, decision record 009
+  min_flagged: 500                 # a Warning threshold needs this many flagged rows ...
+  min_seasons: 3                   # ... across this many seasons
+  cost_ratios: [1, 2, 3, 5, 10]    # miss : false alarm, for the cost curve in the report
+
+frozen:
+  version: m2_v1
+  dir: configs/frozen              # the JSON (coefficients, thresholds), kept in git
+  table_dir: models/frozen         # its window climatology, under data/ (never in git)
+
 m3:                                # LightGBM (reference.md §4.5); regularised defaults
   params:
     objective: binary
