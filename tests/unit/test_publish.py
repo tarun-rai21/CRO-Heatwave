@@ -194,3 +194,18 @@ def test_without_secrets_nothing_is_sent_and_it_can_retry(tmp_path, monkeypatch)
         monkeypatch.delenv(k, raising=False)
     assert alerts.send(forecast(), NAMES, {}, "https://site", tmp_path) == "not configured"
     assert not list(tmp_path.iterdir())
+
+
+def test_the_test_email_says_it_is_a_test(smtp):
+    alerts.send_test({}, "https://site", smtp=smtp)
+    msg = smtp.sent[0]
+    assert msg["To"] == "to@example.com" and "test" in msg["Subject"]
+    assert "no heatwave is being reported" in msg.get_content()
+
+
+def test_the_test_email_names_a_missing_secret_without_any_value(monkeypatch, smtp):
+    monkeypatch.delenv("ALERT_TO")
+    with pytest.raises(SystemExit, match="ALERT_TO") as e:
+        alerts.send_test({}, "https://site", smtp=smtp)
+    assert "from@example.com" not in str(e.value)
+    assert not smtp.sent

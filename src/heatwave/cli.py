@@ -616,6 +616,11 @@ def cmd_build_site(args: argparse.Namespace) -> None:
 def cmd_send_alerts(args: argparse.Namespace) -> None:
     from heatwave.publish import alerts
 
+    if args.test:
+        pub = read_yaml("publish.yaml")
+        alerts.send_test(pub, pub["site_url"])
+        print("test email sent")
+        return
     _, paths, pub, _, names = _publish_context()
     files = sorted((paths.root / "forecasts").glob("issue_year=*/*.parquet"), key=lambda f: f.stem)
     if not files:
@@ -832,9 +837,9 @@ def main(argv: list[str] | None = None) -> None:
     bs = sub.add_parser("build-site", help="the public static site and downloads")
     bs.add_argument("--out", default="_site")
     bs.set_defaults(func=cmd_build_site)
-    sub.add_parser("send-alerts", help="email if a district reaches Warning").set_defaults(
-        func=cmd_send_alerts
-    )
+    sa = sub.add_parser("send-alerts", help="email if a district reaches Warning")
+    sa.add_argument("--test", action="store_true", help="send one test email and stop")
+    sa.set_defaults(func=cmd_send_alerts)
     sub.add_parser("hub-push-outputs", help="upload forecasts, outcomes, alert marks").set_defaults(
         func=cmd_hub_push_outputs
     )

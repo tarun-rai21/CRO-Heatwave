@@ -1,0 +1,31 @@
+name: Test alert email
+
+# Run by hand after setting or changing the alert secrets. Sends one test email and fails
+# if it cannot, so a broken setup is found before the season rather than during it.
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-email:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      ALERT_SMTP_USER: ${{ secrets.ALERT_SMTP_USER }}
+      ALERT_SMTP_PASSWORD: ${{ secrets.ALERT_SMTP_PASSWORD }}
+      ALERT_TO: ${{ secrets.ALERT_TO }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install
+        run: uv sync --locked --no-dev
+
+      - name: Send a test email
+        run: uv run heatwave send-alerts --test

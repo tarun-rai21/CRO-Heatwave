@@ -40,6 +40,47 @@ def compose(rows: pd.DataFrame, names: dict, site_url: str, sender: str, to: str
     return msg
 
 
+def _account() -> tuple[str | None, str | None, str | None]:
+    return (
+        os.environ.get("ALERT_SMTP_USER"),
+        os.environ.get("ALERT_SMTP_PASSWORD"),
+        os.environ.get("ALERT_TO"),
+    )
+
+
+def _deliver(msg: EmailMessage, user: str, password: str, cfg: dict, smtp=None) -> None:
+    connect = smtp or (lambda: smtplib.SMTP_SSL(cfg["smtp_host"], cfg["smtp_port"], timeout=60))
+    with connect() as server:
+        server.login(user, password)
+        server.send_message(msg)
+
+
+def send_test(cfg: dict, site_url: str, smtp=None) -> None:
+    """One test email. Raises if the secrets are missing or sending fails. Prints no
+    account details: the workflow log of a public repo is public."""
+    user, password, to = _account()
+    missing = [
+        name
+        for name, value in (
+            ("ALERT_SMTP_USER", user),
+            ("ALERT_SMTP_PASSWORD", password),
+            ("ALERT_TO", to),
+        )
+        if not value
+    ]
+    if missing:
+        raise SystemExit("missing secrets: " + ", ".join(missing))
+    msg = EmailMessage()
+    msg["Subject"] = "Heatwave model: test email"
+    msg["From"], msg["To"] = user, to
+    msg.set_content(
+        "This is a test. Your alert setup works, and no heatwave is being reported.\n\n"
+        "Real alerts are sent when a district reaches the model's Warning tier, which can "
+        f"only happen from about March to July.\n\n{site_url}\n"
+    )
+    _deliver(msg, user, password, cfg, smtp)
+
+
 def send(
     rows: pd.DataFrame, names: dict, cfg: dict, site_url: str, marker_dir: Path, smtp=None
 ) -> str:
@@ -50,18 +91,10 @@ def send(
     marker = marker_dir / f"{issue}.txt"
     if marker.exists():
         return "already sent"
-    user, password, to = (
-        os.environ.get("ALERT_SMTP_USER"),
-        os.environ.get("ALERT_SMTP_PASSWORD"),
-        os.environ.get("ALERT_TO"),
-    )
+    user, password, to = _account()
     if not (user and password and to):
         return "not configured"
-    msg = compose(rows, names, site_url, user, to)
-    connect = smtp or (lambda: smtplib.SMTP_SSL(cfg["smtp_host"], cfg["smtp_port"], timeout=60))
-    with connect() as server:
-        server.login(user, password)
-        server.send_message(msg)
+    _deliver(compose(rows, names, site_url, user, to), user, password, cfg, smtp)
     marker_dir.mkdir(parents=True, exist_ok=True)
     marker.write_text("sent\n", encoding="utf-8")
     return "sent"
