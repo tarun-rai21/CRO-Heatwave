@@ -2,7 +2,7 @@
 
 The single guide for this project. Each section records decisions we have agreed on and why. Change a decision only by editing this file and adding an entry to the change log at the bottom.
 
-**Status:** Phases 0–6 complete; Phase 7 model choice made (5 Nov 2026): gate G3 failed, logistic regression goes live, frozen as `m2_v1` (decision record 009). Next: the final test (G4). Goes live 1 March 2027 after shadow mode from mid-December.
+**Status:** Phases 0–6 complete; Phase 7 model choice made (5 Nov 2026): gate G3 failed, logistic regression goes live, frozen as `m2_v1` (decision record 009). Final test run once: G4 passed with concern (decision record 010). Next: the daily pipeline and shadow mode. Goes live 1 March 2027 after shadow mode from mid-December.
 
 ---
 
@@ -525,3 +525,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-11-05 | 3.3, 3.6, 3.7, 4.6, 4.8 | G3 failed: logistic regression goes live, trained on a sliding 20-year window, Platt-calibrated at all leads; tiers on the 10-day window only; tuned settings evaluated fold-honestly; XGBoost and random forest added to To do later (decision record 009) |
 | 2026-11-05 | 6.1, 6.2 | Production model frozen as `m2_v1`: coefficients, calibrators and window tier thresholds (15.7%, 27.2%, 36.6%) in `configs/frozen/`; climatology table in the private dataset |
 | 2026-11-05 | 3.7 | G4 pass bar fixed before the test: inside the range of 5-year development periods (decision record 009, `configs/frozen/m2_v1_g4_bar.json`) |
+| 2026-11-05 | 3.7, 6.2 | Final test run once on `m2_v1`: G4 PASS WITH CONCERN, Watch and Alert false alarms just outside their ranges (decision record 010) |
