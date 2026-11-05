@@ -43,6 +43,34 @@ th:first-child,td:first-child,th.l,td.l{text-align:left}th{font-weight:600}
 """
 
 
+# A static page cannot be updated by a run that never starts, so it checks its own age in the
+# reader's browser, against the date in India. Yesterday's forecast is normal until STALE_HOUR_IST:
+# GitHub starts the daily run late, and it has finished by about 17:30 IST so far.
+STALE_HOUR_IST = 20
+STALE_CHECK = """
+(function () {
+  var box = document.getElementById("stale");
+  var india = new Date(Date.now() + 5.5 * 3600 * 1000);
+  var today = Date.UTC(india.getUTCFullYear(), india.getUTCMonth(), india.getUTCDate());
+  var days = Math.round((today - Date.parse(box.dataset.issued)) / 86400000);
+  if (days >= 2 || (days === 1 && india.getUTCHours() >= Number(box.dataset.hour))) {
+    box.hidden = false;
+  }
+})();
+"""
+
+
+def stale_warning(issue) -> str:
+    """Hidden unless the script finds the forecast out of date. Without scripts it stays hidden,
+    and the issue date at the top of the page is the only signal."""
+    return (
+        f'<div id="stale" class="notice" hidden data-issued="{issue}" '
+        f'data-hour="{STALE_HOUR_IST}"><strong>This forecast may be out of date.</strong> It was '
+        f"issued on {issue}, and a newer one should have been published by now. Do not treat "
+        f"these figures as current.</div><script>{STALE_CHECK}</script>"
+    )
+
+
 def _page(title: str, body: str, nav: bool = True) -> str:
     links = (
         '<nav><a href="index.html">Forecast</a><a href="scorecard.html">Scorecard</a><a href="about.html">About</a></nav>'
@@ -126,6 +154,7 @@ def index_html(rows: pd.DataFrame, names: dict, regions: dict) -> str:
     return _page(
         "UP heatwave forecast",
         f"<h1>Uttar Pradesh heatwave forecast</h1><p class='muted'>Issued {issue}</p>"
+        f"{stale_warning(issue)}"
         f'<div class="status">{status_line(rows)}</div>'
         f"<p>Districts by tier: {tiers}.</p>"
         f"<p><strong>Next 10 days</strong> is the chance of at least one heatwave day between "

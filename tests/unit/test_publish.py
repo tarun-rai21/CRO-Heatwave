@@ -1,6 +1,8 @@
 """Outcomes, the public site and the alert email."""
 
 import json
+import shutil
+import subprocess
 
 import numpy as np
 import pandas as pd
@@ -110,6 +112,36 @@ def test_index_sorts_by_tier_and_escapes_names():
     assert page.index("Agra") < page.index("Banda")
     assert 't-warning">Warning' in page
     assert "Warning: 1, Alert: 0, Watch: 0" in page
+
+
+def test_out_of_date_banner_starts_hidden_and_carries_the_issue_date():
+    page = site.index_html(forecast(), NAMES, REGIONS)
+    assert '<div id="stale" class="notice" hidden data-issued="2027-05-10"' in page
+    assert "may be out of date" in page and site.STALE_CHECK in page
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node not available")
+@pytest.mark.parametrize(
+    ("now", "shown"),
+    [
+        ("2027-05-10T03:30:00Z", False),  # issue day
+        ("2027-05-10T18:30:00Z", False),  # next day, 00:00 IST: today's run is not due yet
+        ("2027-05-11T14:29:00Z", False),  # next day, 19:59 IST
+        ("2027-05-11T14:30:00Z", True),  # next day, 20:00 IST
+        ("2027-05-11T18:30:00Z", True),  # two days on, 00:00 IST
+        ("2027-05-20T06:00:00Z", True),
+    ],
+)
+def test_out_of_date_banner_shows_at_the_right_time(now, shown):
+    script = f"""
+    var box = {{hidden: true, dataset: {{issued: "2027-05-10", hour: "{site.STALE_HOUR_IST}"}}}};
+    var document = {{getElementById: function () {{ return box; }}}};
+    Date.now = function () {{ return Date.parse("{now}"); }};
+    {site.STALE_CHECK}
+    console.log(box.hidden ? "hidden" : "shown");
+    """
+    out = subprocess.run(["node", "-e", script], capture_output=True, text=True, check=True)
+    assert out.stdout.strip() == ("shown" if shown else "hidden")
 
 
 def test_degraded_says_so():

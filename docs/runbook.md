@@ -69,7 +69,7 @@ Checks that compare forecasts with history are skipped when there is no in-seaso
 
 **Warnings from the checks are not emailed.** Levels are `ok`, `skipped`, `warn` and `fail`, and only `fail` sends email. In season, read the Monitor step's log once a week (see [the weekly routine](#calendar)).
 
-**Nothing tells you if GitHub never starts the run.** There is no failed run, so no email, and the site stays as it was. See [Site is out of date](#site-is-out-of-date).
+**No email is sent if GitHub never starts the run.** There is no failed run, so nothing goes out and the site stays as it was, though the page then shows an out-of-date banner. See [Site is out of date](#site-is-out-of-date).
 
 ## What to do when
 
@@ -89,7 +89,7 @@ The data is more than 2 days late, or validation failed. The status line gives t
 
 ### Site is out of date
 
-"Issued" at the top of the page is older than today, and it is past about 18:00 IST.
+The page shows "This forecast may be out of date", or "Issued" at the top is older than today and it is past about 18:00 IST. The banner appears from 20:00 IST on the day after the issue date, in the reader's browser. It covers the forecast page only: `latest.csv` and `latest.json` carry `issue_date` but no warning.
 
 1. In the Actions tab, look for today's Daily run.
 2. **No run today and no run yesterday:** the schedule may be off. Open the workflow and click **Enable workflow** if offered, then [run it by hand](#run-the-daily-job-by-hand).
@@ -266,7 +266,7 @@ GitHub stops scheduled workflows after 60 days without repo activity. The daily 
 
 ## Known gaps
 
-- **No alarm if the run never starts**, and the static page can't flag its own age. Check the "Issued" date.
+- **No email if the run never starts.** The page warns readers that it's out of date, but nobody is told unless someone opens it.
 - **Publishing is late in the day.** The forecast appears at about 13:30–17:00 IST, not 09:00.
 - **Run date is measured two ways.** Forecasts use the date in India, `validate` uses UTC. They differ only after midnight IST.
 - **No full outage drill yet** (see above).
