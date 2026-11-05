@@ -2,7 +2,7 @@
 
 The single guide for this project. Each section records decisions we have agreed on and why. Change a decision only by editing this file and adding an entry to the change log at the bottom.
 
-**Status:** Phases 0–6 complete; Phase 7 model choice made (5 Nov 2026): gate G3 failed, logistic regression goes live, frozen as `m2_v1` (decision record 009). Final test run once: G4 passed with concern (decision record 010). Daily run and public site launched in shadow mode (decision record 012). Open blocker: provisional soil moisture (decision record 013). Next: docs and monitoring. Goes live 1 March 2027 after shadow mode from mid-December.
+**Status:** Phases 0–6 complete; Phase 7 model choice made (5 Nov 2026): gate G3 failed, logistic regression goes live, frozen as `m2_v1` (decision record 009). Final test run once: G4 passed with concern (decision record 010). Daily run and public site launched in shadow mode (decision record 012). Soil moisture removed because of its provisional data: `m2_v2` is the live model (decision record 013); its only fresh test is the 2026 season check. Next: runbook, model card and data card. Goes live 1 March 2027 after shadow mode from mid-December.
 
 ---
 
@@ -529,3 +529,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-11-05 | 2.4, 5.6 | Label drift term extended through 2025, development years unchanged; later years hold the 2021–25 mean (−0.79 °C); `heatwave drift-check` added; `m2_v1` unchanged (decision record 011) |
 | 2026-11-05 | 5.2, 5.4 | Daily run built: forecast, outcomes, public site on GitHub Pages, email alerts to the owner only (no Telegram); public launch without asking IMD, the owner's decision (decision record 012) |
 | 2026-11-06 | 5.6, 6.1 | Monitoring added. Provisional root soil moisture reads about 0.13 below final in September; open and blocking go-live (decision record 013) |
+| 2026-11-06 | 4.4, 6.1 | `m2_v2` frozen and in the daily run: logistic regression without soil moisture; tiers 14.1%, 27.4%, 34.7%; `m2_v1` kept as the record (decision record 013) |

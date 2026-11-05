@@ -1,6 +1,6 @@
 # 013: Provisional soil moisture does not match the data the model was trained on
 
-**Status:** found 6 November 2026 while building the monitoring. **Open: no fix decided.** It blocks go-live until resolved. Nothing has been changed in `m2_v1`.
+**Status:** found 6 November 2026 while building the monitoring. **Decided by the owner: remove soil moisture from the live model.** Frozen as `m2_v2` (`configs/frozen/m2_v2.json`, git tag `m2_v2`), which replaces `m2_v1` in the daily run. `m2_v1` is unchanged and stays tagged as the record. The 2026 season check is still to come.
 
 ## Finding
 
@@ -56,3 +56,34 @@ The final test (decision record 010) used final data, so it does not cover this.
 
 - The public site shows no probabilities until 15 February, so nothing misleading is published in the meantime.
 - `heatwave monitor-monthly` flags a soil moisture gap above 0.02 and emails the owner. Daily feature-drift checks also watch `gwetroot_anom` in season.
+
+## Decision and result
+
+Option 1. The limit was set before the comparison ran: the cost is modest if window skill falls by less than a quarter and stays clearly above 0, on all days and on onset days.
+
+Same folds, 2006–2020, other-fold calibrators. Full tables: `reports/model_m2_v2.md`.
+
+| Window skill | With soil | Without soil | Fall | Difference (95% interval) |
+|---|---|---|---|---|
+| All days | 0.100 | 0.086 | 14% | −0.014 (−0.028 to −0.001) |
+| Onset days | 0.084 | 0.066 | 22% | −0.018 (−0.031 to −0.003) |
+
+Both pass the limit, but the loss is real: both intervals are below 0. Single-day skill at leads 8–10 falls to about 0.001 on all days, effectively none.
+
+**`m2_v2`:** the same logistic model and 2001–2020 training window, on `doy_sin`, `doy_cos`, `tmax_anom`, `tmax_anom_mean7` and the climatology logit, fitted at code `335b579`.
+
+| Tier (10-day window) | Threshold | Caught | False alarms | Held-out folds: caught / false |
+|---|---|---|---|---|
+| Watch | 14.1% | 80% | 68% | 78% / 69% |
+| Alert | 27.4% | 56% | 55% | 55% / 57% |
+| Warning | 34.7% | 43% | 50% | 35% / 57% |
+
+## Provisional temperature was checked first
+
+Tmax also differs between provisional and final data. At district level (September–October 2026, 2,325 district-days): mean +0.08 °C, SD 1.35 °C; the 7-day mean has SD 0.89 °C; the state-mean gap persists from day to day (autocorrelation 0.79). A no-soil model fitted the same way, re-scored on 2021–2025 with errors of that size added: window skill 0.159 with none, 0.138 to 0.160 with a steady shift of up to ±0.8 °C, 0.146 with daily noise of SD 1.35 °C. This did not justify stopping. `heatwave monitor-monthly` flags a Tmax gap above 0.5 °C.
+
+## Evidence for `m2_v2`, and its limits
+
+- **There is no clean test.** The G4 result in decision record 010 belongs to `m2_v1`. Re-scoring `m2_v2` on 2021–2025 (`reports/final_test_m2_v2_info.md`) gives window skill 0.159, onset 0.121, Alerts true 46%. This is information only: the years are spent, the label's post-2020 correction was fitted on them, and the choice to remove soil moisture was made after seeing them. That this beats `m2_v1` there (0.130) does not show that removing soil moisture helps; on development years it hurts.
+- **The 2026 season check is the only fresh evidence left**, and it is not perfectly unseen (decision record 011). Its bar is proposed in `configs/frozen/m2_v2_g4_bar.json` by the same method as `m2_v1` and is not yet approved.
+- **If the spring soil moisture gap turns out small,** this will have given up some skill for nothing. It can be revisited at the 2027 retrain with real spring gaps, which the bitemporal store now records.
