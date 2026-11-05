@@ -2,7 +2,7 @@
 
 The single guide for this project. Each section records decisions we have agreed on and why. Change a decision only by editing this file and adding an entry to the change log at the bottom.
 
-**Status:** Phases 0–6 complete; Phase 7 model choice made (5 Nov 2026): gate G3 failed, logistic regression goes live (decision record 009). Next: freeze the model and thresholds, then the final test. Goes live 1 March 2027 after shadow mode from mid-December.
+**Status:** Phases 0–6 complete; Phase 7 model choice made (5 Nov 2026): gate G3 failed, logistic regression goes live, frozen as `m2_v1` (decision record 009). Next: the final test (G4). Goes live 1 March 2027 after shadow mode from mid-December.
 
 ---
 
@@ -523,3 +523,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-10-31 | 2.3 | Rainfall quarantine closed after POWER's silent fix of 27 Oct; a closed defect's unchanged values re-downloaded after the fix are used again (decision record 007) |
 | 2026-11-05 | 4.5, 4.6 | M3 early stopping and tuning score only in-season (March–July) inner-block rows; tuning runs on Kaggle (study synced via Hugging Face, resumable), GPU used only if it matches the CPU result; 40-trial cap unchanged |
 | 2026-11-05 | 3.3, 3.6, 3.7, 4.6, 4.8 | G3 failed: logistic regression goes live, trained on a sliding 20-year window, Platt-calibrated at all leads; tiers on the 10-day window only; tuned settings evaluated fold-honestly; XGBoost and random forest added to To do later (decision record 009) |
+| 2026-11-05 | 6.1, 6.2 | Production model frozen as `m2_v1`: coefficients, calibrators and window tier thresholds (15.7%, 27.2%, 36.6%) in `configs/frozen/`; climatology table in the private dataset |

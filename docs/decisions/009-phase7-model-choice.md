@@ -1,6 +1,6 @@
 # 009: Phase 7 model choice (gate G3), training window, calibration and tiers
 
-**Status:** decided by the owner, 5 November 2026. Model and thresholds are not frozen yet; the 2021–2025 final test has not been run.
+**Status:** decided by the owner, 5 November 2026. Frozen as `m2_v1` (`configs/frozen/m2_v1.json`, git tag `m2_v1`). The 2021–2025 final test has not been run.
 
 ## Summary
 
@@ -78,16 +78,16 @@ Rules are unchanged (§3.6). What changed is where they apply. A warning thresho
 
 | Tier | Threshold | Caught | False alarms | Held-out folds: caught / false |
 |---|---|---|---|---|
-| Watch | 15% | 80% | 68% | 78% / 69% |
-| Alert | 25% | 63% | 59% | 56% / 61% |
-| Warning | 41% | 31% | 50% | 28% / 58% |
+| Watch | 15.7% | 80% | 67% | 78% / 67% |
+| Alert | 27.2% | 61% | 57% | 60% / 58% |
+| Warning | 36.6% | 43% | 50% | 36% / 56% |
 
-These thresholds are provisional until frozen. Held-out Warning misses the 50% target, so officials should expect about 4 in 10 Warnings to verify. The 3:1 cost ratio remains a working assumption: on the window, 5:1 catches 73% with 64% false alarms, and 10:1 catches 91% with 74%.
+These are the frozen thresholds, on the production calibrator's scale. Provisional figures shown to the owner before the freeze used other-fold calibrators (15%, 25%, 41%) and moved to these values; the rules did not change. Held-out Warning misses the 50% target, so officials should expect about 4.4 in 10 Warnings to verify. The 3:1 cost ratio remains a working assumption: on the window, 5:1 catches 80% with 66% false alarms, and 10:1 catches 91% with 72%.
 
 Window against single-day check (§4.8): the window is below the highest single-day forecast in 8% of rows, typically by 0.2 percentage points, at worst by 11.5.
 
 ## Consequences
 
-- Next: fit and freeze the production model, calibrators and thresholds with a reproducible command, tag them, then run the single final test on 2021–2025 (gate G4).
-- The analysis behind the calibration and tier tables was run from the functions in `validation/calibration.py`, not yet from a CLI command or a generated report. The freeze step adds that.
+- Frozen with `heatwave freeze-model` at code `425953c`, fitted on 2001–2020 (features `ft_e13be4154d21`, labels `lbl_9105574cbb3a`). The tables behind this record are generated in `reports/phase7_model.md`. The window climatology table is in the private dataset (`models/frozen/`), checked against the hash in the JSON.
+- Next: the single final test on 2021–2025 (gate G4).
 - Other model families (XGBoost, random forest) and NWP inputs are on the To do later list. New candidates should not be judged only by repeated looks at 2006–2020.
