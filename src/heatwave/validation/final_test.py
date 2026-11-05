@@ -111,6 +111,112 @@ def judge(result: dict[str, float], bar: dict) -> dict:
     return {"verdict": verdict, "fails": fails, "concerns": concerns}
 
 
+def season_bar(spec: dict, lead: pd.DataFrame, window: pd.DataFrame, col: str) -> dict:
+    """The one-season bar (decision record 014): each measure across single development years.
+    One season varies far more than five, so the 5-year bar fails most ordinary years."""
+    lead, window = lead.copy(), window.copy()
+    lead["p_x"] = calibration.cross_fit(lead, col, "lead")
+    window["p_x"] = calibration.cross_fit(window, col, None)
+    cal = spec["window"]["calibrator"]
+    window["p_f"] = FrozenModel._calibrate(cal, window[col].to_numpy(dtype=float))
+    thresholds = {t: spec["tiers"][t]["threshold"] for t in TIERS}
+    rows = [
+        {
+            "year": int(y),
+            **measures(lead[lead["year"] == y], w, "p_x", "p_f", thresholds),
+        }
+        for y, w in window.groupby("year")
+    ]
+    t = pd.DataFrame(rows)
+    columns = [*SKILLS, *TIER_SCORES, "forecast_gap"]
+    return {
+        "version": spec["version"],
+        "basis": "single development years, 2006-2020; other-fold calibrators for skill",
+        "years": t.astype(object).where(t.notna(), None).to_dict("records"),
+        "range": {c: {"min": float(t[c].min()), "max": float(t[c].max())} for c in columns},
+        "middle_half": {
+            c: {"low": float(t[c].quantile(0.25)), "high": float(t[c].quantile(0.75))}
+            for c in SKILLS
+        },
+    }
+
+
+def judge_season(result: dict[str, float], bar: dict) -> dict:
+    """FAIL: a main skill below every development year. Skill at or below 0 alone is not a
+    failure, because that happened in 7 of the 15 development years. CONCERN: anything else
+    outside its range. A pass means only that nothing looks broken."""
+    r = bar["range"]
+    fails, concerns = [], []
+    for k in SKILLS:
+        v = result[k]
+        if not v >= r[k]["min"]:
+            fails.append(f"{k} is {v:.4f}: below the lowest development year, {r[k]['min']:.4f}")
+        elif v > r[k]["max"]:
+            concerns.append(f"{k} is {v:.4f}: above the highest year, {r[k]['max']:.4f}")
+    for k in TIER_SCORES:
+        v = result[k]
+        if not r[k]["min"] <= v <= r[k]["max"]:
+            concerns.append(f"{k} is {v:.3f}: outside {r[k]['min']:.3f} to {r[k]['max']:.3f}")
+    if result["forecast_gap"] > r["forecast_gap"]["max"]:
+        gap, top = result["forecast_gap"], r["forecast_gap"]["max"]
+        concerns.append(f"window forecast bias is {gap:.3f}: above the largest year, {top:.3f}")
+    verdict = "FAIL" if fails else "PASS WITH CONCERN" if concerns else "PASS"
+    return {"verdict": verdict, "fails": fails, "concerns": concerns}
+
+
+def season_note(verdict: str, bar: dict) -> str:
+    m = bar["middle_half"]["window_all"]
+    return (
+        f"**Gate G4 for this model: {verdict}.** A pass means only that nothing looks broken. "
+        "It does not confirm skill: one season can't, and this one was not perfectly unseen "
+        f"(decision record 014). Half of development years had window skill from {m['low']:.3f} "
+        f"to {m['high']:.3f}. Intervals below resample one year, so they mean nothing here."
+    )
+
+
+def expected_rows(problem: Problem, year: int, districts: int = 75) -> tuple[int, int]:
+    """Rows a complete season has: (per-lead table, window table)."""
+    h, season = problem.horizons, problem.evaluation_season
+    days = pd.Series(pd.date_range(f"{year}-01-01", f"{year}-12-31"))
+    first, last = (days + pd.Timedelta(days=d) for d in (h[0], h[-1]))
+    lead_rows = int(in_window(days, season).sum()) * len(h) * districts
+    window_rows = int((in_window(first, season) & in_window(last, season)).sum()) * districts
+    return lead_rows, window_rows
+
+
+def season_end(problem: Problem, year: int) -> pd.Timestamp:
+    days = pd.Series(pd.date_range(f"{year}-01-01", f"{year}-12-31"))
+    return days[in_window(days, problem.evaluation_season)].max()
+
+
+def season_data_problems(
+    imd_file: Path,
+    tmax_versions: pd.DataFrame,
+    end: pd.Timestamp,
+    label_versions: list[str],
+    feature_versions: list[str],
+    spec: dict,
+) -> list[str]:
+    """Why the season check can't run yet. Reads no outcome and no season value.
+
+    POWER doesn't label each value final or provisional. Its replacement batches run forward
+    in date order, so a revision to a date after the season means the season is final."""
+    out = []
+    if not imd_file.exists():
+        out.append(f"IMD grid not downloaded: {imd_file.name}")
+    later = tmax_versions[tmax_versions["obs_date"] > end]
+    n = later.groupby(["cell_id", "obs_date"])["value"].size() if len(later) else pd.Series()
+    if not (n > 1).any():
+        out.append(f"no POWER revision seen after {end.date()}: the season may not be final")
+    if label_versions != [spec["label_version"]]:
+        out.append(f"label tables are {label_versions}, the model expects {spec['label_version']}")
+    if feature_versions != [spec["feature_version"]]:
+        out.append(
+            f"feature tables are {feature_versions}, the model expects {spec['feature_version']}"
+        )
+    return out
+
+
 def load_rows(
     problem: Problem,
     root: Path,

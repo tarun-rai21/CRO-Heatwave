@@ -218,6 +218,26 @@ gh workflow disable daily-ingest.yml
 
 Disabling the workflow alone leaves the last page up. Not yet tried on this repo. To restore, set Pages' source back to GitHub Actions in Settings, then enable the workflow.
 
+### Run the 2026 season check
+
+**Single use: there's no second attempt.** Read decision record 014 first. If it isn't ready by 1 March, go-live moves to 1 April.
+
+```bash
+uv run heatwave ingest-imd --last-year 2026   # once IMD has published 2026
+uv run heatwave hub-pull --only raw/power
+uv run heatwave build-district-daily
+uv run heatwave build-labels
+uv run heatwave build-features
+uv run heatwave season-check --rehearse some/scratch/folder   # development year only
+uv run heatwave season-check --run-once
+```
+
+It refuses to run until the data is ready and everything is committed, and its message says what's missing. It writes `reports/season_check_2026.md`. Don't commit reports that the rebuild changes without reading them.
+
+**If it says a run already started,** a previous attempt stopped partway and may have read the season. Don't delete the marker file. Tell the owner.
+
+**A pass means only that nothing looks broken.** If it fails, hold go-live and investigate.
+
 ### Change the live model
 
 Not in season, except to fix a bug. A new version is made with `heatwave freeze-model`, reviewed, tagged, and set in `frozen.version`. Its `_monitor.json` limits are written once with `heatwave monitor --write-baseline`, and its table goes to `models/frozen` on Hugging Face. The About page text in `src/heatwave/publish/site.py` is written by hand and must be updated with it.
@@ -242,7 +262,7 @@ Don't roll back to `m2_v1` as a quick fix. It's the version with the soil moistu
 | 1st of each month | Read the Monthly checks run. Keep an eye on the soil moisture gap as spring data arrives | Operator |
 | By early February | Replace any token near expiry; send a test email | Operator |
 | About 15 February | Check that probabilities have appeared and look sensible | Operator |
-| Early 2027 | Run the 2026 season check once, when its final POWER data and IMD's 2026 grid exist. The command isn't built yet | Owner |
+| Early 2027 | Run the 2026 season check once, when its final POWER data and IMD's 2026 grid exist. It's the G4 test for `m2_v2` and is required before go-live. See [the procedure](#run-the-2026-season-check) | Owner |
 | Every July | End-of-season report | Owner |
 | After each season | `heatwave ingest-imd` and `heatwave drift-check --download`; re-estimate the drift term; yearly retrain, with promotion criteria written first | Owner |
 

@@ -367,6 +367,8 @@ def cmd_freeze_model(args: argparse.Namespace) -> None:
 
 FINAL_TEST_REPORT = REPO_ROOT / "reports" / "final_test.md"
 REHEARSAL_YEARS = (2016, 2020)  # development years only
+SEASON_CHECK_REPORT = REPO_ROOT / "reports" / "season_check_2026.md"
+SEASON_REHEARSAL_YEARS = (2020, 2020)  # development years only
 
 
 def check_rehearsal_years(years: tuple[int, int], development: tuple[int, int]) -> None:
@@ -374,13 +376,16 @@ def check_rehearsal_years(years: tuple[int, int], development: tuple[int, int]) 
         raise SystemExit(f"a rehearsal may use development years only, not {years}")
 
 
-def _final_test_guards(bar_path: Path, model_path: Path, tag: str) -> None:
+def _final_test_guards(
+    bar_path: Path, model_path: Path, tag: str, report: Path | None = None
+) -> None:
     """The real run: once only, on the tagged model, with a committed bar and code."""
     import subprocess
 
-    started = FINAL_TEST_REPORT.with_suffix(".started")
-    if FINAL_TEST_REPORT.exists():
-        raise SystemExit(f"{FINAL_TEST_REPORT} exists: the final test runs only once")
+    report = report or FINAL_TEST_REPORT
+    started = report.with_suffix(".started")
+    if report.exists():
+        raise SystemExit(f"{report} exists: the final test runs only once")
     if started.exists():
         raise SystemExit(f"{started} exists: a run already started. Read it before doing anything")
 
@@ -471,6 +476,103 @@ def cmd_final_test(args: argparse.Namespace) -> None:
     outcome = ft.score(lead, window, model.spec, bar, model_cfg)
     out.write_text(
         ft.report(lead, window, outcome, bar, model.spec, model_cfg, title), encoding="utf-8"
+    )
+    if args.run_once:
+        out.with_suffix(".started").unlink()
+    print(title, "->", outcome["verdict"])
+    print(json.dumps(outcome, indent=2))
+    print(f"wrote {out}")
+
+
+def _season_data_problems(problem, cfg: dict, paths, model) -> list[str]:
+    import pyarrow.parquet as pq
+
+    from heatwave.ingest.raw_store import RawStore
+    from heatwave.validation import final_test as ft
+
+    year = problem.validation.season_2026[0]
+    d = RawStore.from_config(cfg, paths.root).read([year])
+    d = d[d["variable"] == "T2M_MAX"].copy()
+    d["obs_date"] = pd.to_datetime(d["obs_date"])
+
+    def versions(path: Path, column: str) -> list[str]:
+        return pq.read_table(path, columns=[column])[column].unique().to_pylist()
+
+    return ft.season_data_problems(
+        paths.root / cfg["imd"]["raw_dir"] / f"{year}.GRD",
+        d[["cell_id", "obs_date", "value"]],
+        ft.season_end(problem, year),
+        versions(paths.root / "labels" / "labels_daily.parquet", "label_version"),
+        versions(paths.root / "features" / "development.parquet", "feature_version"),
+        model.spec,
+    )
+
+
+def cmd_season_check(args: argparse.Namespace) -> None:
+    """Gate G4 for the live model, on the 2026 season (decision record 014). Single use."""
+    from heatwave.models.frozen import FrozenModel
+    from heatwave.validation import final_test as ft
+    from heatwave.validation import walk_forward
+
+    if not (args.write_bar or args.rehearse or args.run_once):
+        print("Nothing run. Use --write-bar, --rehearse DIR, or --run-once (the real, single run).")
+        return
+    cfg, paths = _ingest_context()
+    problem, model_cfg = load_problem(), read_yaml("models.yaml")
+    frozen = model_cfg["frozen"]
+    model_path = REPO_ROOT / frozen["dir"] / f"{frozen['version']}.json"
+    bar_path = REPO_ROOT / frozen["dir"] / f"{frozen['version']}_season_bar.json"
+    if args.run_once:
+        _final_test_guards(bar_path, model_path, frozen["version"], SEASON_CHECK_REPORT)
+    model = FrozenModel.load(model_path, paths.root / frozen["table_dir"])
+    if args.write_bar:
+        if bar_path.exists():
+            raise SystemExit(f"{bar_path} exists: the bar does not change once written")
+        oof = {
+            t: pd.read_parquet(paths.root / "oof" / f"{frozen['oof']}_{t}.parquet")
+            for t in ("lead", "window")
+        }
+        last = problem.validation.development[1]
+        if max(oof["lead"]["year"].max(), oof["window"]["year"].max()) > last:
+            raise SystemExit("the bar may use development years only")
+        col = f"p_{frozen['oof_model']}"
+        bar = ft.season_bar(model.spec, oof["lead"], oof["window"], col)
+        bar_path.write_text(json.dumps(bar, indent=2), encoding="utf-8")
+        print(json.dumps(bar["range"], indent=2))
+        return
+
+    bar = json.loads(bar_path.read_text(encoding="utf-8"))
+    if args.run_once:
+        waiting = _season_data_problems(problem, cfg, paths, model)
+        if waiting:
+            raise SystemExit("not ready, and nothing was read:\n- " + "\n- ".join(waiting))
+        years, out = problem.validation.season_2026, SEASON_CHECK_REPORT
+        title = "2026 season check (gate G4 for this model)"
+        # Before any season row is read: a crash then cannot lead to a quiet second attempt.
+        out.with_suffix(".started").write_text(
+            f"started with {_code_version()}\n", encoding="utf-8"
+        )
+    else:
+        years, title = SEASON_REHEARSAL_YEARS, "REHEARSAL on a development year: not a result"
+        check_rehearsal_years(years, problem.validation.development)
+        out = Path(args.rehearse) / "season_check_rehearsal.md"
+        out.parent.mkdir(parents=True, exist_ok=True)
+    regions = walk_forward.regions(REPO_ROOT / "configs" / "regions.yaml")
+    lead, window = ft.load_rows(problem, paths.root, years, model, regions, bool(args.run_once))
+    want = ft.expected_rows(problem, years[0])
+    if (len(lead), len(window)) != want:
+        if args.run_once:  # no score was computed or shown, so the test is not spent
+            out.with_suffix(".started").unlink()
+        raise SystemExit(
+            f"incomplete season: {len(lead)} and {len(window)} rows, expected {want}. "
+            "Rebuild labels and features. Nothing was scored."
+        )
+    thresholds = {t: model.spec["tiers"][t]["threshold"] for t in ft.TIERS}
+    result = ft.measures(lead, window, "p_M2F", "p_M2F", thresholds)
+    outcome = {"result": result, "thresholds": thresholds, **ft.judge_season(result, bar)}
+    note = ft.season_note(outcome["verdict"], bar)
+    out.write_text(
+        ft.report(lead, window, outcome, bar, model.spec, model_cfg, title, note), encoding="utf-8"
     )
     if args.run_once:
         out.with_suffix(".started").unlink()
@@ -1002,6 +1104,12 @@ def main(argv: list[str] | None = None) -> None:
     )
     ft.add_argument("--rescore-info", metavar="NAME", help="after the test: re-score, not a test")
     ft.set_defaults(func=cmd_final_test)
+    sc = sub.add_parser("season-check", help="gate G4 on 2026; without a flag nothing runs")
+    sc.add_argument("--write-bar", action="store_true", help="write the bar (development only)")
+    sc.add_argument("--rehearse", metavar="DIR", help="whole path on a development year only")
+    sc.add_argument("--run-once", action="store_true", help="the real check on 2026: single use")
+    sc.set_defaults(func=cmd_season_check)
+
     fc = sub.add_parser("forecast", help="one day's forecast from the frozen model")
     fc.add_argument("--issue-date", help="replay a past date (needs --out)")
     fc.add_argument("--out", help="root folder for a replay's output")

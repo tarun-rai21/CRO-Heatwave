@@ -166,7 +166,7 @@ BSS = 1 − BS_model / BS_climatology
 |---|---|---|
 | Development | 1981–2020 | Training, tuning, feature choices, calibration, threshold setting |
 | Final test | 2021–2025 | Used **once**, after code, features, parameters, calibrator and thresholds are frozen and git-tagged |
-| 2026 season | 2026 | A second one-time check, run only after the final test report is written |
+| 2026 season | 2026 | A second one-time check, run only after the final test report is written. **Counts as G4 for `m2_v2`** (decision record 014) |
 | Live | 2027 onward | Prospective verification |
 
 Calendar-year splits leave a gap of months between training and testing, because the heat season never crosses 1 January. That makes leakage through rolling windows impossible. Peeking at the final test block (even "to check the pipeline runs") burns it; pipeline checks use development years.
@@ -437,7 +437,7 @@ CRO-Heatwave/
 - the forecast is produced every day automatically on GitHub Actions;
 - it is published on the website with tiers and alerts;
 - outcomes are verified automatically;
-- the production model has passed its final test (G4);
+- the production model has passed its final test (G4). For `m2_v2` that is the one-time 2026 season check (decision record 014);
 - a runbook exists.
 
 **Production model: chosen by gate G3 before go-live** (revised 2026-10-20; the project ran well ahead of schedule). Both M2 (logistic regression) and M3 (LightGBM) are built and evaluated on the same walk-forward folds. **M3 goes live only if it beats M2 on the onset subset at some lead with a paired year-block interval excluding 0**; otherwise M2 goes live. M3 tuning is capped at the limits in §4.6 and is never extended to make it win. The chosen model is calibrated, tier thresholds are frozen, and it is tested once on 2021–2025 before the pipeline goes live.
@@ -531,3 +531,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-11-06 | 5.6, 6.1 | Monitoring added. Provisional root soil moisture reads about 0.13 below final in September; open and blocking go-live (decision record 013) |
 | 2026-11-06 | 4.4, 6.1 | `m2_v2` frozen and in the daily run: logistic regression without soil moisture; tiers 14.1%, 27.4%, 34.7%; `m2_v1` kept as the record (decision record 013) |
 | 2026-11-06 | 5.2, 6.2 | Phase 10 documents written: `docs/runbook.md`, `reports/model_card.md`, `reports/data_card.md`; the daily run's keep-alive now also covers the monthly checks |
+| 2026-11-06 | 3.2, 6.1 | The 2026 season check counts as G4 for `m2_v2`, judged against single development years, because the 5-year bar fails 10 of 15 of them; a failure holds go-live; missing data by 1 March means the 1 April fallback; `heatwave season-check` added (decision record 014) |

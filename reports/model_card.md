@@ -60,7 +60,7 @@ Skill is the Brier skill score against the usual chance for the district and dat
 | Development, out-of-fold | 2006–2020 | Used to choose the model and thresholds, so somewhat optimistic |
 | Re-score | 2021–2025 | **Not a test.** Years spent, label correction fitted on them, and soil moisture was removed after seeing them |
 | Clean final test, G4 | 2021–2025 | **Of `m2_v1`, not this version,** on an older label |
-| 2026 season check | 2026 | Not run. Bar proposed in `configs/frozen/m2_v2_g4_bar.json`, not yet approved |
+| 2026 season check, this version's G4 | 2026 | Not run. One season only, and not perfectly unseen. Bar fixed in advance (decision record 014) |
 
 All of these use **final** data. Live forecasts use provisional data and may do worse.
 
@@ -131,7 +131,7 @@ Forecast levels are roughly right on average, but not in every kind of year or m
 
 ## Before go-live
 
-`reference.md` §6.1 requires the production model to have passed G4 before going fully live. **`m2_v2` hasn't,** and 2021–2025 can't be reused. Open for the owner: whether the one-time 2026 season check counts as this model's G4, on what bar, and what happens if IMD's 2026 grid isn't out by 1 March.
+`reference.md` §6.1 requires the production model to have passed G4 before going fully live. **`m2_v2` hasn't yet.** The owner has decided that the one-time 2026 season check is its G4 (decision record 014). One season can show that nothing is broken, but can't confirm skill: single development years ranged from −0.265 to +0.308 on window skill. It fails only if a main score falls below every development year, and a failure holds go-live. If its data isn't ready by 1 March, go-live moves to the 1 April fallback.
 
 ## Versions
 
