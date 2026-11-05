@@ -32,5 +32,29 @@ Skill sign and size match development, so there is no sign of overfitting. Warni
 
 - `m2_v1` is not changed because of this result.
 - Officials should be told plainly that Alerts verify about 35% of the time overall, more than half the time in a big heatwave year and about 1 in 10 or fewer in a quiet one.
-- The over-forecasting is being investigated for understanding only.
+- The over-forecasting was investigated for understanding only (below).
 - Still required before go-live: the daily pipeline, shadow mode, and the one-time 2026 season check.
+
+## Investigation of the over-forecasting (after the test, for understanding only)
+
+`m2_v1` and the verdict are unchanged. These are after-the-fact looks at spent years, so they explain but do not prove. The analysis was run from temporary scripts, not a repo command.
+
+**Quiet seasons.** All of the excess comes from 2021, 2023 and 2025 (+8 to +14 points). 2022 and 2024 are about −2. Quiet years in development show the same (2006–08: +8 to +11). The model cannot foresee a quiet season.
+
+**The label runs cool after 2020 (main finding).** NOAA GSOD station data for 2021–2025 was downloaded after the test to `data/raw/stations/gsod_after_2020/`, kept apart from the folder the label build reads, so the labels are unaffected. Nine stations report in both periods. Each source minus the station, on the same station-days, March–July, 2021–25 minus 2016–20:
+
+| Source | Change (°C) | 95% interval (year blocks) | Stations cooler |
+|---|---|---|---|
+| Label Tmax | −0.54 | −0.85 to −0.21 | 9 of 9 |
+| POWER, uncorrected | −0.59 | −1.00 to −0.10 | 8 of 9 |
+| IMD | −0.19 | −0.40 to +0.01 | 7 of 9 |
+
+Mean of the per-station changes: label −0.50, POWER −0.48, IMD −0.13. So the cooling is mostly in POWER, not in IMD or the stations, and the fixed post-2020 hold of the drift term (−0.37 °C) did not capture it. It appears to continue a decline already visible in development (label minus stations: about +0.35 in 2011–15, −0.15 in 2016–20, −0.69 in 2021–25, as yearly means; only 4 of the 9 stations report in 2011–15, so that first figure is not like for like). On station-days of 38 °C or more, the label sits further below the stations (−0.99 in 2021–25), though the change from 2016–20 is about the same (−0.58). The cause is not known. GSOD and IMD may share some stations, so they are not fully independent.
+
+**Effect, roughly.** Adding 0.42 °C to the 2021–25 label raises the window rate from 12.4% to 16.3% and cuts the forecast bias from 5.6 to 1.8 points; adding 0.6 °C gives 18.2% and −0.2. This shifts the label only and holds forecasts fixed, so it is approximate. It suggests the final test undercounts heatwaves and scored the model against a too-cool label.
+
+**The calibrator.** Before calibration the window forecast averaged 12.8%, after it 18.1%. That looked like over-correction, but against a corrected label the calibrated forecast is about right and the uncalibrated one too low. Fitted on earlier folds only in development, results were mixed (window skill 0.089 without, 0.074 with; calibration better in the two latest folds). No case for removing it.
+
+**Inputs.** No sign of drift in the yearly values, not formally tested.
+
+**Follow-up.** The annual drift re-estimate that decision record 005 already requires is now needed, and earlier than planned. No decision has been made on how to apply it.
