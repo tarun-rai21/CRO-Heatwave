@@ -166,7 +166,16 @@ def score(lead: pd.DataFrame, window: pd.DataFrame, spec: dict, bar: dict, cfg: 
     return {"result": result, "thresholds": thresholds, **judge(result, bar)}
 
 
-def report(lead, window, outcome: dict, bar: dict, spec: dict, cfg: dict, title: str) -> str:
+def report(
+    lead,
+    window,
+    outcome: dict,
+    bar: dict,
+    spec: dict,
+    cfg: dict,
+    title: str,
+    note: str | None = None,
+) -> str:
     e = cfg["evaluation"]
     args = (e["bootstrap_resamples"], e["bootstrap_seed"], e["ci"])
     m = ["M2F"]
@@ -202,7 +211,8 @@ def report(lead, window, outcome: dict, bar: dict, spec: dict, cfg: dict, title:
     lines = [f"- {x}" for x in outcome["fails"] + outcome["concerns"]] or ["- none"]
     n = metrics.discrimination(window, m, None)
     return (
-        f"# {title}\n\n**Gate G4: {outcome['verdict']}**\n\nModel `{spec['version']}` unchanged. "
+        f"# {title}\n\n{note or '**Gate G4: ' + outcome['verdict'] + '**'}\n\n"
+        f"Model `{spec['version']}` unchanged. "
         f"Years {int(window['year'].min())}-{int(window['year'].max())}.\n\n"
         "Findings:\n\n"
         + "\n".join(lines)

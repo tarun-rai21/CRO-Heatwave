@@ -117,6 +117,7 @@ def run(
         season,
         rule.bias_drift_smooth_years,
         rule.bias_drift_hold_years,
+        rule.bias_drift_update_to,
     )
     (root / "reference" / "label_bias_drift.json").write_text(json.dumps(drift, indent=2))
 

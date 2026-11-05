@@ -111,12 +111,16 @@ gsod:
   data_url: https://www.ncei.noaa.gov/data/global-summary-of-the-day/access/{year}/{station}.csv
   # Stations inside UP, or within this distance of its boundary (degrees).
   boundary_buffer_deg: 0.05
-  # Development years only: the final-test block (2021-2025) is not downloaded.
+  # Development years only for the label build.
   years: [1981, 2020]
   missing_value: 9999.9
   # MAX_ATTRIBUTES "*" = maximum derived from hourly reports (biased low): excluded.
   derived_flag: "*"
   raw_dir: raw/stations/gsod     # <year>/<station>.csv, as downloaded
+  # Later years, for `heatwave drift-check` only. A separate folder: the label build
+  # reads raw_dir, and development labels must not depend on later station data.
+  check_years: [2021, 2025]
+  check_raw_dir: raw/stations/gsod_after_2020
   request:
     timeout_s: 60
     max_retries: 4

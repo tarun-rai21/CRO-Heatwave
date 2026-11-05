@@ -43,11 +43,13 @@ target:                        # reference.md §2.4
   # POWER's warm bias shrinks over time (~3.3 C vs stations in the 1980s, ~2.2 C
   # after 2005) while IMD vs stations stays flat. A yearly drift term (POWER - IMD
   # beyond the plane, season mean, smoothed) is removed too. Estimated on the
-  # development years; later years use the hold-period mean (docs/decisions/005).
+  # development years, which never change. Later years are added once published
+  # (update_to) and years after them use the hold-period mean (docs/decisions/005, 011).
   bias_temporal: imd_drift
   bias_drift_years: [1981, 2020]
   bias_drift_smooth_years: 5
-  bias_drift_hold_years: [2016, 2020]
+  bias_drift_update_to: 2025
+  bias_drift_hold_years: [2021, 2025]
 
 onset:                         # reference.md §3.5
   lookback_days: 3             # onset case: no heatwave day in the 3 days up to t

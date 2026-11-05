@@ -526,3 +526,4 @@ Weeks start on Mondays. Each phase ends on its exit criterion: if a phase overru
 | 2026-11-05 | 6.1, 6.2 | Production model frozen as `m2_v1`: coefficients, calibrators and window tier thresholds (15.7%, 27.2%, 36.6%) in `configs/frozen/`; climatology table in the private dataset |
 | 2026-11-05 | 3.7 | G4 pass bar fixed before the test: inside the range of 5-year development periods (decision record 009, `configs/frozen/m2_v1_g4_bar.json`) |
 | 2026-11-05 | 3.7, 6.2 | Final test run once on `m2_v1`: G4 PASS WITH CONCERN, Watch and Alert false alarms just outside their ranges (decision record 010) |
+| 2026-11-05 | 2.4, 5.6 | Label drift term extended through 2025, development years unchanged; later years hold the 2021–25 mean (−0.79 °C); `heatwave drift-check` added; `m2_v1` unchanged (decision record 011) |

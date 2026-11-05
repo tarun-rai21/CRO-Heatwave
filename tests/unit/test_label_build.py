@@ -200,3 +200,26 @@ def test_drift_is_removed_before_the_map():
     assert np.allclose(a.tmax_used[late] - b.tmax_used[late], 0.5, atol=0.051)
     assert np.allclose(a.tmax_used[~late], b.tmax_used[~late])
     assert a.label_version.iloc[0] != b.label_version.iloc[0]
+
+
+def test_updating_the_drift_never_changes_the_fitted_years():
+    years = pd.to_datetime([f"{y}-05-01" for y in range(2001, 2026)])
+    power = pd.DataFrame({"district_id": "a", "obs_date": years, "T2M_MAX": 40.0})
+    gap = np.where(years.year >= 2021, -1.0, np.where(years.year >= 2011, -0.2, 0.0))
+    imd = pd.DataFrame({"district_id": "a", "obs_date": years, "tmax_imd": 40.0 - gap})
+    districts = pd.DataFrame({"district_id": ["a"], "centroid_lat": [27.0], "centroid_lon": [80.0]})
+    plane = fit_bias_plane(
+        power.assign(T2M_MAX=41.0),
+        imd.assign(tmax_imd=41.0),
+        districts,
+        (2001, 2020),
+        [5],
+    )
+    args = (power, imd, districts, plane, (2001, 2020), [5], 5)
+    old = fit_bias_drift(*args, (2016, 2020))
+    new = fit_bias_drift(*args, (2021, 2025), 2025)
+    for y in range(2001, 2021):
+        assert new["drift"][y] == old["drift"][y]
+    assert new["drift"][2025] == pytest.approx(-1.0)
+    assert new["hold_value"] == pytest.approx(-1.0)
+    assert drift_value(new, [2030])[0] == pytest.approx(-1.0)

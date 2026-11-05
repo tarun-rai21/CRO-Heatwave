@@ -88,7 +88,8 @@ def test_the_bar_is_the_range_over_five_year_periods():
 
 
 def args(**kw):
-    return argparse.Namespace(**{"write_bar": False, "rehearse": None, "run_once": False, **kw})
+    base = {"write_bar": False, "rehearse": None, "run_once": False, "rescore_info": None}
+    return argparse.Namespace(**{**base, **kw})
 
 
 def test_without_a_flag_nothing_runs(capsys, monkeypatch):

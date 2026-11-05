@@ -70,6 +70,7 @@ class HeatwaveRule:
     bias_drift_years: Years | None = None
     bias_drift_smooth_years: int = 1
     bias_drift_hold_years: Years | None = None
+    bias_drift_update_to: int | None = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +168,7 @@ def _parse(raw: dict[str, Any]) -> Problem:
                 _years(target["bias_drift_years"]) if target.get("bias_drift_years") else None
             ),
             bias_drift_smooth_years=int(target.get("bias_drift_smooth_years", 1)),
+            bias_drift_update_to=target.get("bias_drift_update_to"),
             bias_drift_hold_years=(
                 _years(target["bias_drift_hold_years"])
                 if target.get("bias_drift_hold_years")
@@ -236,7 +238,9 @@ def validate_problem(p: Problem) -> None:
         dy, hy = t.bias_drift_years, t.bias_drift_hold_years
         check(dy is not None and hy is not None, "imd_drift needs drift and hold years")
         if dy is not None and hy is not None:
-            check(dy[0] <= hy[0] <= hy[1] <= dy[1], "hold years must lie inside the drift years")
+            end = t.bias_drift_update_to or dy[1]
+            check(end >= dy[1], "bias_drift_update_to must not be before the drift years end")
+            check(dy[0] <= hy[0] <= hy[1] <= end, "hold years must lie inside the drift years")
             check(dy[1] < p.validation.final_test[0], "drift years must end before the final test")
         check(t.bias_drift_smooth_years >= 1, "bias_drift_smooth_years must be >= 1")
     corrected = t.tmax_source == "power_bias_corrected"

@@ -40,7 +40,7 @@ def test_label_rule_matches_reference_2_4():
     assert (t.bias_temporal, t.bias_drift_years, t.bias_drift_hold_years) == (
         "imd_drift",
         (1981, 2020),
-        (2016, 2020),
+        (2021, 2025),
     )
     assert t.bias_drift_smooth_years == 5
 
@@ -115,7 +115,7 @@ def set_path(*keys_and_value):
         (set_path("target", "bias_fit_period", None), "needs bias_reference"),
         (set_path("target", "bias_reference", "satellite"), "bias_reference must be"),
         (set_path("target", "bias_drift_years", [1981, 2022]), "before the final test"),
-        (set_path("target", "bias_drift_hold_years", [2010, 2024]), "inside the drift years"),
+        (set_path("target", "bias_drift_hold_years", [2010, 2026]), "inside the drift years"),
         (
             set_path("season", "training", {"start": "03-15", "end": "07-15"}),
             "cover the evaluation",

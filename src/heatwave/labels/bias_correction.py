@@ -137,21 +137,29 @@ def fit_bias_drift(
     months: list[int],
     smooth_years: int,
     hold_years: tuple[int, int],
+    update_to: int | None = None,
 ) -> dict:
+    """Yearly POWER - IMD beyond the plane, smoothed. With `update_to`, years after
+    `years` are added from later data, and the values for `years` stay exactly what they
+    were: a centred window would otherwise pull later years into them."""
+    last = update_to or years[1]
     m = (
         power[["district_id", "obs_date", "T2M_MAX"]]
         .merge(imd[["district_id", "obs_date", "tmax_imd"]], on=["district_id", "obs_date"])
         .merge(districts[["district_id", "centroid_lat", "centroid_lon"]], on="district_id")
     )
-    m = m[m["obs_date"].dt.year.between(*years) & m["obs_date"].dt.month.isin(months)]
+    m = m[m["obs_date"].dt.year.between(years[0], last) & m["obs_date"].dt.month.isin(months)]
     resid = m["T2M_MAX"] - m["tmax_imd"] - plane_value(plane, m["centroid_lat"], m["centroid_lon"])
     annual = resid.groupby(m["obs_date"].dt.year).mean()
-    annual = annual.reindex(range(years[0], years[1] + 1))
+    annual = annual.reindex(range(years[0], last + 1))
+    fixed = annual.loc[: years[1]].rolling(smooth_years, center=True, min_periods=1).mean()
     smooth = annual.rolling(smooth_years, center=True, min_periods=1).mean()
+    smooth.loc[fixed.index] = fixed
     hold = float(annual.loc[hold_years[0] : hold_years[1]].mean())
     return {
         "years": list(years),
         "months": list(months),
+        "update_to": update_to,
         "smooth_years": smooth_years,
         "hold_years": list(hold_years),
         "hold_value": hold,
