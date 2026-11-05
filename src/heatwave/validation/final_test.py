@@ -54,13 +54,15 @@ def measures(lead: pd.DataFrame, window: pd.DataFrame, col: str, tier_col: str, 
     }
 
 
-def development_bar(spec: dict, lead: pd.DataFrame, window: pd.DataFrame) -> dict:
+def development_bar(
+    spec: dict, lead: pd.DataFrame, window: pd.DataFrame, col: str = "p_M2S"
+) -> dict:
     """The range of each measure over every 5-year development period."""
     lead, window = lead.copy(), window.copy()
-    lead["p_x"] = calibration.cross_fit(lead, "p_M2S", "lead")
-    window["p_x"] = calibration.cross_fit(window, "p_M2S", None)
+    lead["p_x"] = calibration.cross_fit(lead, col, "lead")
+    window["p_x"] = calibration.cross_fit(window, col, None)
     cal = spec["window"]["calibrator"]
-    window["p_f"] = FrozenModel._calibrate(cal, window["p_M2S"].to_numpy(dtype=float))
+    window["p_f"] = FrozenModel._calibrate(cal, window[col].to_numpy(dtype=float))
     thresholds = {t: spec["tiers"][t]["threshold"] for t in TIERS}
     rows = []
     for first in range(int(window["year"].min()), int(window["year"].max()) - PERIOD_YEARS + 2):

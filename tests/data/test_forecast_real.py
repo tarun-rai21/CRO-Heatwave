@@ -11,7 +11,8 @@ from heatwave.pipeline import daily
 from heatwave.validation import final_test, walk_forward
 
 ROOT = REPO_ROOT / "data"
-MODEL = REPO_ROOT / "configs" / "frozen" / "m2_v1.json"
+VERSION = read_yaml("models.yaml")["frozen"]["version"]
+MODEL = REPO_ROOT / "configs" / "frozen" / f"{VERSION}.json"
 have = (ROOT / "features" / "development.parquet").exists() and (ROOT / "models/frozen").exists()
 pytestmark = [pytest.mark.slow, pytest.mark.skipif(not have, reason="local data not available")]
 

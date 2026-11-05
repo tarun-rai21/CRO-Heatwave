@@ -1,5 +1,5 @@
 """Freeze the production model: M2 on the last 20 development years, Platt calibrators
-from out-of-fold predictions, tier thresholds on the 10-day window (decision record 009).
+from out-of-fold predictions, tier thresholds on the 10-day window (decision records 009, 013).
 
 Reads development years only. The feature table also holds the final-test years, so
 rows are cut to the development block here and a later row is an error: the final test
@@ -8,6 +8,7 @@ must stay unseen until the frozen model is scored on it.
 
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +26,7 @@ from heatwave.models.frozen import (
     logistic_to_dict,
     sha256,
 )
-from heatwave.validation import calibration, compare, metrics
+from heatwave.validation import calibration, metrics
 from heatwave.validation.report import _md, _wide
 from heatwave.validation.walk_forward import COLUMNS
 
@@ -67,16 +68,29 @@ def training_tables(problem: Problem, root: Path) -> dict[str, pd.DataFrame]:
     }
 
 
+def production_cfg(cfg: dict) -> dict:
+    """The model settings with the frozen model's own features."""
+    out = copy.deepcopy(cfg)
+    out["baselines"]["m2"]["features"] = list(cfg["frozen"]["features"])
+    return out
+
+
+def oof_col(cfg: dict) -> str:
+    return f"p_{cfg['frozen']['oof_model']}"
+
+
 def build(problem: Problem, cfg: dict, root: Path, out_dir: Path, version: str, code: str | None):
     """Fit everything, write the window climatology table to out_dir, return the spec
     (the JSON content, written by the caller) and the OOF tables."""
+    cfg = production_cfg(cfg)
+    col, oof_name = oof_col(cfg), cfg["frozen"]["oof"]
     m2, tiers_cfg = cfg["baselines"]["m2"], cfg["tier_support"]
     rules = {t.name: t.params for t in problem.tiers}
     years = int(m2["sliding_years"])
     last = problem.validation.development[1]
     first = last - years + 1
     tables = training_tables(problem, root)
-    oof = {t: pd.read_parquet(root / "oof" / f"m2_sliding_{t}.parquet") for t in ("lead", "window")}
+    oof = {t: pd.read_parquet(root / "oof" / f"{oof_name}_{t}.parquet") for t in ("lead", "window")}
 
     lead = baselines.SlidingWindow(baselines.make("M2", "lead", cfg), "lead", years).fit(
         tables["lead"]
@@ -88,13 +102,13 @@ def build(problem: Problem, cfg: dict, root: Path, out_dir: Path, version: str, 
     # Calibrators from OOF rows only; thresholds on the production calibrator's scale.
     lead_part = {}
     for h, g in oof["lead"].groupby("lead"):
-        cal = calibration.fit(g["p_M2S"].to_numpy(dtype=float), g["y"].to_numpy(dtype=float))
+        cal = calibration.fit(g[col].to_numpy(dtype=float), g["y"].to_numpy(dtype=float))
         lead_part[str(int(h))] = {
             **logistic_to_dict(lead.model.models[int(h)]),
             "calibrator": calibrator_to_dict(cal),
         }
     w = oof["window"]
-    p, y = w["p_M2S"].to_numpy(dtype=float), w["y"].to_numpy(dtype=float)
+    p, y = w[col].to_numpy(dtype=float), w["y"].to_numpy(dtype=float)
     win_cal = calibration.fit(p, y)
     calibrated = calibration.apply(win_cal, p)
     found = calibration.thresholds(
@@ -115,8 +129,8 @@ def build(problem: Problem, cfg: dict, root: Path, out_dir: Path, version: str, 
     feats = root / "features" / "development.parquet"
     spec = {
         "version": version,
-        "model": "M2 logistic regression, sliding window, Platt calibrated",
-        "decision_record": "docs/decisions/009-phase7-model-choice.md",
+        "model": "M2 logistic regression without soil moisture, sliding window, Platt calibrated",
+        "decision_record": "docs/decisions/013-provisional-soil-moisture.md",
         "code_version": code,
         "fit_years": [first, last],
         "fit_end_date": f"{last}-12-31",
@@ -128,8 +142,8 @@ def build(problem: Problem, cfg: dict, root: Path, out_dir: Path, version: str, 
         "inputs_sha256": {
             "features/development.parquet": sha256(feats),
             "labels/labels_daily.parquet": sha256(root / "labels" / "labels_daily.parquet"),
-            "oof/m2_sliding_lead.parquet": sha256(root / "oof" / "m2_sliding_lead.parquet"),
-            "oof/m2_sliding_window.parquet": sha256(root / "oof" / "m2_sliding_window.parquet"),
+            f"oof/{oof_name}_lead.parquet": sha256(root / "oof" / f"{oof_name}_lead.parquet"),
+            f"oof/{oof_name}_window.parquet": sha256(root / "oof" / f"{oof_name}_window.parquet"),
         },
         "features": list(m2["features"]),
         "clim_clip": list(m2["clim_clip"]),
@@ -172,60 +186,42 @@ def build(problem: Problem, cfg: dict, root: Path, out_dir: Path, version: str, 
 
 
 def report(spec: dict, oof: dict, problem: Problem, cfg: dict, root: Path) -> str:
-    """reports/phase7_model.md: everything behind decision record 009, from the OOF files."""
+    """reports/model_<version>.md: the tables behind the frozen model, from the OOF files only.
+    Decisions on earlier versions keep their own reports (reports/phase7_model.md)."""
     e, t_cfg = cfg["evaluation"], cfg["tier_support"]
     args = (e["bootstrap_resamples"], e["bootstrap_seed"], e["ci"])
     rules = {t.name: t.params for t in problem.tiers}
-    keys = {"lead": ["district_id", "issue_date", "lead"], "window": ["district_id", "issue_date"]}
+    col = oof_col(cfg)
     lead, window = oof["lead"].copy(), oof["window"].copy()
 
-    # G3: default and tuned LightGBM against the same M2 (expanding, as the gate was run).
-    g3 = {}
-    tuned = pd.read_parquet(
-        root / "oof" / "m3_tuned_lead.parquet", columns=[*keys["lead"], "p_M3T"]
-    )
-    base = pd.read_parquet(root / "oof" / "m3_default_lead.parquet")
-    both = base.merge(tuned, on=keys["lead"], validate="1:1")
-    if len(both) != len(base):
-        raise ValueError("default and tuned LightGBM rows differ")
-    for name in ("M3", "M3T"):
-        g3[name] = compare.g3(both, cfg, challenger=name)
-
-    # Sliding against expanding, and calibration, scored with other-fold calibrators.
-    sliding = compare.g3(lead, cfg, challenger="M2S", champion="M2")
-    lead["p_Cal"] = calibration.cross_fit(lead, "p_M2S", "lead")
-    window["p_Cal"] = calibration.cross_fit(window, "p_M2S", None)
-    pair = [("Cal", "M2S")]
-    cal_all = metrics.bss_table(lead, ["M2S", "Cal"], "M0", "lead", *args, pairs=pair)
-    cal_onset = metrics.bss_table(
-        lead[lead["onset"]], ["M2S", "Cal"], "M0", "lead", *args, pairs=pair
-    )
-    win_all = metrics.bss_table(window, ["M2S", "Cal"], "M0", None, *args, pairs=pair)
-    win_onset = metrics.bss_table(
-        window[window["onset"]], ["M2S", "Cal"], "M0", None, *args, pairs=pair
-    )
+    # Scored with other-fold calibrators. S keeps soil moisture; New is the frozen model.
+    for name, source in (("p_New", col), ("p_S", "p_M2S")):
+        lead[name] = calibration.cross_fit(lead, source, "lead")
+        window[name] = calibration.cross_fit(window, source, None)
+    pair = [("New", "S")]
+    skill = lambda d, by: metrics.bss_table(d, ["S", "New"], "M0", by, *args, pairs=pair)  # noqa: E731
+    win_all, win_onset = skill(window, None), skill(window[window["onset"]], None)
+    lead_all, lead_onset = skill(lead, "lead"), skill(lead[lead["onset"]], "lead")
     means = {
-        g: (lead.groupby(g)[["y", "p_M2S", "p_Cal"]].mean() * 100).round(2).reset_index()
+        g: (lead.groupby(g)[["y", col, "p_New"]].mean() * 100).round(2).reset_index()
         for g in ("lead", "month", "fold")
     }
 
     # Tiers on the frozen scale: production calibrator for the thresholds, other-fold
     # thresholds for the held_* columns.
     win_cal = spec["window"]["calibrator"]
-    w = window.assign(
-        p_Frozen=FrozenModel._calibrate(win_cal, window["p_M2S"].to_numpy(dtype=float))
-    )
+    w = window.assign(p_Frozen=FrozenModel._calibrate(win_cal, window[col].to_numpy(dtype=float)))
     tiers = calibration.tier_table(
         w, "p_Frozen", None, rules, t_cfg["min_flagged"], t_cfg["min_seasons"]
     ).drop(columns="group")
     cost = calibration.cost_curve(w, "p_Frozen", None, t_cfg["cost_ratios"]).drop(columns="group")
     daily = calibration.tier_table(
-        lead, "p_Cal", "lead", rules, t_cfg["min_flagged"], t_cfg["min_seasons"]
+        lead, "p_New", "lead", rules, t_cfg["min_flagged"], t_cfg["min_seasons"]
     ).rename(columns={"group": "lead"})
 
-    top = lead.groupby(["district_id", "issue_date"])["p_Cal"].max().rename("top").reset_index()
-    gap = top.merge(window[["district_id", "issue_date", "p_Cal"]])
-    gap = gap["top"] - gap["p_Cal"]
+    top = lead.groupby(["district_id", "issue_date"])["p_New"].max().rename("top").reset_index()
+    gap = top.merge(window[["district_id", "issue_date", "p_New"]])
+    gap = gap["top"] - gap["p_New"]
 
     coef = pd.DataFrame(
         [
@@ -241,29 +237,24 @@ def report(spec: dict, oof: dict, problem: Problem, cfg: dict, root: Path) -> st
     )
     s = spec
     return (
-        f"# Phase 7: model choice and frozen model ({s['version']})\n\n"
-        "Generated by `heatwave freeze-model`. Reasoning: docs/decisions/009. All scores are "
+        f"# Frozen model {s['version']}\n\n"
+        "Generated by `heatwave freeze-model`. Reasoning: docs/decisions/013. All scores are "
         "out-of-fold 2006-2020 with paired year-block intervals; "
-        "**no final-test year was read.**\n\n"
+        "**no later year was read.**\n\n"
         f"- Code: `{s['code_version']}`\n- Fit years: {s['fit_years'][0]}-{s['fit_years'][1]}\n"
-        f"- Features: `{s['feature_version']}`, labels: `{s['label_version']}`\n\n"
-        "## Gate G3 (onset subset): LightGBM minus logistic regression\n\n"
-        f"Default settings: {'passed' if g3['M3']['passed'] else 'failed'}. "
-        f"Tuned, fold-honest settings: {'passed' if g3['M3T']['passed'] else 'failed'}.\n\n"
-        + _md(g3["M3T"]["table"].drop(columns="model"), 4)
-        + "\n### Default settings\n\n"
-        + _md(g3["M3"]["table"].drop(columns="model"), 4)
-        + "\n## Sliding 20-year window minus expanding (onset subset)\n\n"
-        + _md(sliding["table"].drop(columns="model"), 4)
-        + "\n## Calibration, scored with other-fold calibrators\n\n### All days\n\n"
-        + _md(_wide(cal_all, "lead"), 4)
-        + "\n### Onset days\n\n"
-        + _md(_wide(cal_onset, "lead"), 4)
-        + "\n### 10-day window: all days, then onset days\n\n"
+        f"- Features: {', '.join(s['features'])}, plus the logit of climatology\n"
+        f"- Feature table: `{s['feature_version']}`, labels: `{s['label_version']}`\n\n"
+        "## Against the same model with soil moisture (S)\n\n`New-S` below 0 means the frozen "
+        "model scores lower, which is the cost of leaving soil moisture out.\n\n"
+        "### 10-day window: all days, then onset days\n\n"
         + _md(win_all.drop(columns="group"), 4)
         + "\n"
         + _md(win_onset.drop(columns="group"), 4)
-        + "\n### Mean forecast against observed (%), by lead, month and fold\n\n"
+        + "\n### By lead, all days\n\n"
+        + _md(_wide(lead_all, "lead"), 4)
+        + "\n### By lead, onset days\n\n"
+        + _md(_wide(lead_onset, "lead"), 4)
+        + "\n## Mean forecast against observed (%), by lead, month and fold\n\n"
         + "\n".join(_md(m, 2) for m in means.values())
         + "\n## Frozen tiers: 10-day window\n\n"
         "`held_*` uses thresholds fitted on the other folds.\n\n"

@@ -242,3 +242,32 @@ def test_a_large_soil_moisture_gap_is_flagged_and_a_small_one_is_not():
     flags = monthly.skew_flags(t)
     assert len(flags) == 1 and "GWETROOT" in flags[0]["detail"]
     assert not monthly.skew_flags(t.assign(mean_change=0.01))
+
+
+def test_gap_limits_follow_the_models_inputs():
+    t = pd.DataFrame(
+        [
+            {"variable": "GWETROOT", "revised": 10, "mean_change": 0.13},
+            {"variable": "T2M_MAX", "revised": 10, "mean_change": 0.9},
+        ]
+    )
+    no_soil = monthly.skew_flags(t, ["tmax_anom", "doy_sin"])
+    assert len(no_soil) == 1 and "T2M_MAX" in no_soil[0]["detail"]
+    assert len(monthly.skew_flags(t)) == 2
+
+
+def test_only_the_models_features_are_watched(tmp_path):
+    window = pd.DataFrame({"issue_date": pd.to_datetime(["2010-05-01"]), "month": 5, "p_x": [0.2]})
+    feat = pd.DataFrame(
+        {"asof_date": pd.to_datetime(["2005-05-01"]), **dict.fromkeys(checks.ANOMALY_FEATURES, 0.0)}
+    )
+    spec = {
+        "version": "t",
+        "features": ["tmax_anom", "doy_sin"],
+        "window": {"calibrator": {"slope": 1.0, "intercept": 0.0}},
+        "tiers": {"warning": {"threshold": 0.6}},
+    }
+    b = checks.write_baseline(spec, window, feat, tmp_path / "b.json", "p_x")
+    assert list(b["features"]["5"]) == ["tmax_anom"]
+    got = checks.feature_checks(feats(0.0), pd.Timestamp("2027-05-07"), b)
+    assert [c["check"] for c in got] == ["feature_drift_tmax_anom"]

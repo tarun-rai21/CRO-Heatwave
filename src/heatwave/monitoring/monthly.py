@@ -19,9 +19,10 @@ from heatwave.ingest.raw_store import RawStore
 SKEW_VARIABLES = ["T2M_MAX", "T2M_MIN", "GWETROOT", "GWETTOP"]
 DRIFT_LIMIT_C = 0.75  # a change this large against stations is reported
 MIN_STATION_DAYS = 30
-# Mean first-to-latest change that matters: skill was hit by a shift of 0.02 (decision record 013).
+# Mean first-to-latest change that matters to a model using the input. Soil moisture: skill was
+# hit by a shift of 0.02 (decision record 013). Tmax: skill held up to about 0.8 C.
 SOIL_GAP_LIMIT = 0.02
-SOIL_VARIABLES = ["GWETROOT"]
+TMAX_GAP_LIMIT = 0.5
 
 
 def skew(store: RawStore, years: list[int], variables=SKEW_VARIABLES) -> pd.DataFrame:
@@ -49,16 +50,21 @@ def skew(store: RawStore, years: list[int], variables=SKEW_VARIABLES) -> pd.Data
     return pd.DataFrame(rows)
 
 
-def skew_flags(table: pd.DataFrame) -> list[dict]:
-    """Soil moisture variables whose revisions exceed the limit."""
+def skew_flags(table: pd.DataFrame, features=("tmax_anom", "gwetroot_anom")) -> list[dict]:
+    """Inputs of the frozen model whose provisional values differ too much from final ones."""
+    limits = {}
+    if "tmax_anom" in features:
+        limits["T2M_MAX"] = TMAX_GAP_LIMIT
+    if "gwetroot_anom" in features:
+        limits["GWETROOT"] = SOIL_GAP_LIMIT
     out = []
-    for r in table[table["variable"].isin(SOIL_VARIABLES)].itertuples():
-        if r.mean_change is not None and abs(r.mean_change) > SOIL_GAP_LIMIT:
+    for r in table[table["variable"].isin(limits)].itertuples():
+        if r.mean_change is not None and abs(r.mean_change) > limits[r.variable]:
             detail = (
                 f"provisional {r.variable} differs from final by {r.mean_change:+.3f} on average "
-                f"({r.revised} revised values), limit {SOIL_GAP_LIMIT}. See decision record 013."
+                f"({r.revised} revised values), limit {limits[r.variable]}. See decision 013."
             )
-            out.append({"check": "provisional_soil_moisture", "detail": detail})
+            out.append({"check": "provisional_against_final", "detail": detail})
     return out
 
 

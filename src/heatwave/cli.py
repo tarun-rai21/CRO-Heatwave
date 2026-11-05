@@ -358,10 +358,11 @@ def cmd_freeze_model(args: argparse.Namespace) -> None:
     json_dir.mkdir(parents=True, exist_ok=True)
     (json_dir / f"{version}.json").write_text(json.dumps(spec, indent=2), encoding="utf-8")
     text = freeze.report(spec, oof, problem, model_cfg, paths.root)
-    (report_dir / "phase7_model.md").write_text(text, encoding="utf-8")
+    report_path = report_dir / f"model_{version}.md"
+    report_path.write_text(text, encoding="utf-8")
     keys = ("version", "code_version", "fit_years", "tiers")
     print(json.dumps({k: spec[k] for k in keys}, indent=2))
-    print(f"wrote {json_dir / (version + '.json')}, {table_dir}, {report_dir / 'phase7_model.md'}")
+    print(f"wrote {json_dir / (version + '.json')}, {table_dir}, {report_path}")
 
 
 FINAL_TEST_REPORT = REPO_ROOT / "reports" / "final_test.md"
@@ -424,10 +425,11 @@ def cmd_final_test(args: argparse.Namespace) -> None:
         if bar_path.exists():
             raise SystemExit(f"{bar_path} exists: the bar does not change once written")
         oof = {
-            t: pd.read_parquet(paths.root / "oof" / f"m2_sliding_{t}.parquet")
+            t: pd.read_parquet(paths.root / "oof" / f"{frozen['oof']}_{t}.parquet")
             for t in ("lead", "window")
         }
-        bar = ft.development_bar(model.spec, oof["lead"], oof["window"])
+        col = f"p_{frozen['oof_model']}"
+        bar = ft.development_bar(model.spec, oof["lead"], oof["window"], col)
         bar_path.write_text(json.dumps(bar, indent=2), encoding="utf-8")
         print(json.dumps(bar["range"], indent=2))
         return
@@ -665,12 +667,12 @@ def cmd_monitor(args: argparse.Namespace) -> None:
     if args.write_baseline:
         if base_path.exists():
             raise SystemExit(f"{base_path} exists: the limits do not change with the model frozen")
-        window = pd.read_parquet(paths.root / "oof" / "m2_sliding_window.parquet")
+        window = pd.read_parquet(paths.root / "oof" / f"{frozen['oof']}_window.parquet")
         features = pd.read_parquet(
             paths.root / "features" / "development.parquet",
             columns=["asof_date", *checks.ANOMALY_FEATURES],
         )
-        checks.write_baseline(spec, window, features, base_path)
+        checks.write_baseline(spec, window, features, base_path, f"p_{frozen['oof_model']}")
         print(f"wrote {base_path}")
         return
     baseline = json.loads(base_path.read_text(encoding="utf-8"))
@@ -721,7 +723,7 @@ def cmd_monitor_monthly(args: argparse.Namespace) -> None:
     from heatwave.pipeline import daily
     from heatwave.publish import alerts
 
-    cfg, paths, pub, _, _ = _publish_context()
+    cfg, paths, pub, spec, _ = _publish_context()
     problem, g = load_problem(), cfg["gsod"]
     today = utc_now()
     store = RawStore.from_config(cfg, paths.root)
@@ -769,7 +771,7 @@ def cmd_monitor_monthly(args: argparse.Namespace) -> None:
     path.write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(skew.round(3).to_string(index=False))
     print(label["level"], label["detail"])
-    flagged = monthly.skew_flags(skew)
+    flagged = monthly.skew_flags(skew, spec["features"])
     if label["level"] == "warn":
         flagged.append({"check": "label_against_stations", "detail": label["detail"]})
     print(
@@ -785,6 +787,31 @@ def cmd_monitor_monthly(args: argparse.Namespace) -> None:
     if args.push:
         n = hub.push(cfg, paths.root, [path, where_file], f"monthly checks {month}")
         print(f"uploaded {n} files")
+
+
+def cmd_evaluate_production(args: argparse.Namespace) -> None:
+    """Walk-forward of the frozen model's feature set, beside the same model with every
+    baseline feature, on the same folds. Development years only."""
+    from heatwave.models import baselines
+    from heatwave.validation import freeze, walk_forward
+
+    _, paths = _ingest_context()
+    problem, model_cfg = load_problem(), read_yaml("models.yaml")
+    frozen = model_cfg["frozen"]
+    years = model_cfg["baselines"]["m2"]["sliding_years"]
+    production = freeze.production_cfg(model_cfg)
+    region_map = walk_forward.regions(REPO_ROOT / "configs" / "regions.yaml")
+    walk_forward.VARIANTS["M2S"] = lambda t, fold: baselines.SlidingWindow(
+        baselines.make("M2", t, model_cfg), t, years
+    )
+    walk_forward.VARIANTS[frozen["oof_model"]] = lambda t, fold: baselines.SlidingWindow(
+        baselines.make("M2", t, production), t, years
+    )
+    for target in ("lead", "window"):
+        oof = walk_forward.run(
+            problem, model_cfg, paths.root, region_map, target, ["M0", "M2S", frozen["oof_model"]]
+        )
+        oof.to_parquet(paths.root / "oof" / f"{frozen['oof']}_{target}.parquet", index=False)
 
 
 def cmd_bench_m3(args: argparse.Namespace) -> None:
@@ -959,6 +986,9 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser(
         "evaluate-sliding", help="walk-forward of logistic regression, sliding vs expanding"
     ).set_defaults(func=cmd_evaluate_sliding)
+    sub.add_parser(
+        "evaluate-production", help="walk-forward of the frozen model's feature set"
+    ).set_defaults(func=cmd_evaluate_production)
     fz = sub.add_parser("freeze-model", help="fit and freeze the production model and thresholds")
     fz.add_argument("--dry-run", metavar="DIR", help="write only to DIR; nothing is frozen")
     fz.set_defaults(func=cmd_freeze_model)

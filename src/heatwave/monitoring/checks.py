@@ -21,16 +21,17 @@ SANITY_MARGIN = 0.05  # on a state-mean probability or a tier share
 FEATURE_Z = 3.0  # a 30-day state mean this many year-to-year SDs from its month's history
 FEATURE_DAYS = 30
 WINDOW_BELOW_LEAD = 0.15  # development worst case was 0.115 (decision record 009)
-BASELINE_YEARS = (2001, 2020)  # the training years of m2_v1
+BASELINE_YEARS = (2001, 2020)  # the training years of the frozen model
 
 
 def write_baseline(
-    spec: dict, window_oof: pd.DataFrame, features: pd.DataFrame, path: Path
+    spec: dict, window_oof: pd.DataFrame, features: pd.DataFrame, path: Path, col: str = "p_M2S"
 ) -> dict:
     """Per month: the range of the daily state-mean window forecast and of the Warning share
-    in the out-of-fold years, and the year-to-year spread of each anomaly feature."""
+    in the out-of-fold years, and the year-to-year spread of the model's anomaly features."""
+    watched = [k for k in ANOMALY_FEATURES if k in spec.get("features", ANOMALY_FEATURES)]
     w = window_oof.copy()
-    w["p"] = FrozenModel._calibrate(spec["window"]["calibrator"], w["p_M2S"].to_numpy(dtype=float))
+    w["p"] = FrozenModel._calibrate(spec["window"]["calibrator"], w[col].to_numpy(dtype=float))
     w["warning"] = w["p"] >= spec["tiers"]["warning"]["threshold"]
     daily = w.groupby(["issue_date", "month"]).agg(
         mean_p=("p", "mean"), warning=("warning", "mean")
@@ -39,7 +40,7 @@ def write_baseline(
         mean_p_min=("mean_p", "min"), mean_p_max=("mean_p", "max"), warning_max=("warning", "max")
     )
     f = features[features["asof_date"].dt.year.between(*BASELINE_YEARS)]
-    by_year = f.groupby([f["asof_date"].dt.year, f["asof_date"].dt.month])[ANOMALY_FEATURES].mean()
+    by_year = f.groupby([f["asof_date"].dt.year, f["asof_date"].dt.month])[watched].mean()
     by_year.index.names = ["year", "month"]
     spread = by_year.groupby("month").agg(["mean", "std"])
     out = {
@@ -52,7 +53,7 @@ def write_baseline(
                     "mean": float(spread.loc[m, (k, "mean")]),
                     "std": float(spread.loc[m, (k, "std")]),
                 }
-                for k in ANOMALY_FEATURES
+                for k in watched
             }
             for m in spread.index
         },
@@ -140,7 +141,7 @@ def feature_checks(features: pd.DataFrame, asof_date, baseline: dict) -> list[di
     recent = features[features["asof_date"] > t - pd.Timedelta(days=FEATURE_DAYS)]
     recent = recent[recent["asof_date"] <= t]
     out = []
-    for k in ANOMALY_FEATURES:
+    for k in base:
         z = (float(recent[k].mean()) - base[k]["mean"]) / base[k]["std"]
         level = "ok" if abs(z) <= FEATURE_Z else "warn"
         out.append(_check(f"feature_drift_{k}", level, f"z = {z:+.1f}, limit {FEATURE_Z}"))

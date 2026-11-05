@@ -109,3 +109,12 @@ def test_final_test_years_never_reach_the_freeze(target, col):
     )
     kept = development_rows(d, target, (1981, 2020))
     assert kept[col].dt.year.tolist() == [2019, 2020]
+
+
+def test_the_frozen_model_leaves_soil_moisture_out_and_the_baseline_keeps_it():
+    from heatwave.validation.freeze import oof_col, production_cfg
+
+    produced = production_cfg(CFG)["baselines"]["m2"]["features"]
+    assert "gwetroot_anom" not in produced and "tmax_anom" in produced
+    assert "gwetroot_anom" in CFG["baselines"]["m2"]["features"]
+    assert oof_col(CFG) == "p_M2N"

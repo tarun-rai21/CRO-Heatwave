@@ -24,7 +24,12 @@ tier_support:                      # reference.md §3.6, decision record 009
   cost_ratios: [1, 2, 3, 5, 10]    # miss : false alarm, for the cost curve in the report
 
 frozen:
-  version: m2_v1
+  version: m2_v2                   # m2_v1 stays in configs/frozen and git tag m2_v1 as the record
+  # Soil moisture is left out: its provisional values do not match the final data the model
+  # trains on (docs/decisions/013).
+  features: [doy_sin, doy_cos, tmax_anom, tmax_anom_mean7]
+  oof: m2_nosoil                   # data/oof/<oof>_{lead,window}.parquet: heatwave evaluate-production
+  oof_model: M2N
   dir: configs/frozen              # the JSON (coefficients, thresholds), kept in git
   table_dir: models/frozen         # its window climatology, under data/ (never in git)
 
